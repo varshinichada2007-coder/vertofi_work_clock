@@ -51,10 +51,53 @@ export const WorkClockProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const userId = user?.id || 'usr_admin';
 
   const [now, setNow] = useState<Date>(new Date());
-  const [clockState, setClockState] = useState<ActiveClockState>(() => storage.getActiveClockState(userId));
-  const [timelineEvents, setTimelineEvents] = useState<TimelineEvent[]>(() => storage.getTimelineEvents(userId));
+  const [clockState, setClockState] = useState<ActiveClockState>(() => {
+    try {
+      return storage.getActiveClockState(userId);
+    } catch {
+      return {
+        status: 'NOT_CLOCKED_IN',
+        clockInTimestamp: null,
+        clockOutTimestamp: null,
+        accumulatedBreakSeconds: 0,
+        currentBreakStartTimestamp: null,
+        currentBreakType: null,
+        currentActivity: 'No active task',
+        initialTask: 'No active task',
+        attendanceId: null,
+        todayDateStr: new Date().toISOString().split('T')[0]
+      };
+    }
+  });
+
+  const [timelineEvents, setTimelineEvents] = useState<TimelineEvent[]>(() => {
+    try {
+      return storage.getTimelineEvents(userId);
+    } catch {
+      return [];
+    }
+  });
+
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
-  const [settings, setSettings] = useState<ReminderSettings>(() => storage.getSettings());
+  const [settings, setSettings] = useState<ReminderSettings>(() => {
+    try {
+      return storage.getSettings();
+    } catch {
+      return {
+        clockInReminder: true,
+        clockInTime: '09:00',
+        clockOutReminder: true,
+        clockOutTime: '18:00',
+        breakDurationWarning: true,
+        maxBreakMinutes: 60,
+        activityCheckIn: true,
+        activityIntervalMinutes: 120,
+        use24HourClock: false,
+        timezone: 'Asia/Kolkata',
+        emailNotifications: true
+      };
+    }
+  });
 
   // Modals state
   const [isClockInModalOpen, setIsClockInModalOpen] = useState(false);
