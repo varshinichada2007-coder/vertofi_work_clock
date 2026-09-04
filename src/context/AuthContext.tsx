@@ -37,9 +37,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  // Listen to active Supabase authentication state
+  // Listen to active Supabase authentication state & local storage session
   useEffect(() => {
     let isMounted = true;
+
+    // Safety timer to ensure isLoading never hangs on blank screen
+    const safetyTimer = setTimeout(() => {
+      if (isMounted) {
+        setIsLoading(false);
+      }
+    }, 1500);
 
     const fetchSessionAndProfile = async () => {
       try {
@@ -58,15 +65,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             storage.setCurrentUserId(mapped.id);
             storage.addUser(mapped);
           } else if (isMounted) {
-            setUser(null);
-            storage.setCurrentUserId(null);
+            const currentUser = storage.getCurrentUser();
+            if (currentUser) {
+              setUser(currentUser);
+              setRole(currentUser.role);
+            } else {
+              setUser(null);
+            }
           }
         } else if (isMounted) {
-          setUser(null);
-          storage.setCurrentUserId(null);
+          const currentUser = storage.getCurrentUser();
+          if (currentUser) {
+            setUser(currentUser);
+            setRole(currentUser.role);
+          } else {
+            setUser(null);
+          }
         }
       } catch (err) {
-        console.error('Error fetching auth session:', err);
+        console.warn('Supabase auth session check warning:', err);
+        if (isMounted) {
+          const currentUser = storage.getCurrentUser();
+          if (currentUser) {
+            setUser(currentUser);
+            setRole(currentUser.role);
+          } else {
+            setUser(null);
+          }
+        }
       } finally {
         if (isMounted) {
           setIsLoading(false);
@@ -77,39 +103,42 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     fetchSessionAndProfile();
 
-    // Supabase Auth State Change Listener
-    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (session?.user) {
-        try {
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', session.user.id)
-            .maybeSingle();
+    let authSub: { unsubscribe: () => void } | undefined = undefined;
+    try {
+      const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
+        if (session?.user) {
+          try {
+            const { data: profile } = await supabase
+              .from('profiles')
+              .select('*')
+              .eq('id', session.user.id)
+              .maybeSingle();
 
-          if (profile && isMounted) {
-            const mapped = mapProfileToUser(profile);
-            setUser(mapped);
-            setRole(mapped.role);
-            storage.setCurrentUserId(mapped.id);
-            storage.addUser(mapped);
+            if (profile && isMounted) {
+              const mapped = mapProfileToUser(profile);
+              setUser(mapped);
+              setRole(mapped.role);
+              storage.setCurrentUserId(mapped.id);
+              storage.addUser(mapped);
+            }
+          } catch (e) {
+            console.error('Error loading profile on auth state change:', e);
           }
-        } catch (e) {
-          console.error('Error loading profile on auth state change:', e);
         }
-      } else if (isMounted) {
-        setUser(null);
-        storage.setCurrentUserId(null);
-      }
-      if (isMounted) {
-        setIsLoading(false);
-        refreshUsers();
-      }
-    });
+        if (isMounted) {
+          setIsLoading(false);
+          refreshUsers();
+        }
+      });
+      authSub = authListener?.subscription;
+    } catch (e) {
+      console.warn('onAuthStateChange listener warning:', e);
+    }
 
     return () => {
       isMounted = false;
-      authListener.subscription.unsubscribe();
+      clearTimeout(safetyTimer);
+      authSub?.unsubscribe();
     };
   }, []);
 
