@@ -1,7 +1,8 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User, UserRole } from '../types';
 import { storage } from '../services/storage';
-import { api, AddEmployeeParams } from '../services/api';
+import { api, AddEmployeeParams, mapProfileToUser } from '../services/api';
+import { supabase } from '../lib/supabase';
 
 interface AuthContextType {
   user: User | null;
@@ -10,11 +11,10 @@ interface AuthContextType {
   login: (email: string, password?: string) => Promise<void>;
   addEmployee: (params: AddEmployeeParams) => Promise<User>;
   deleteEmployee: (userId: string) => Promise<void>;
-  switchUser: (userId: string) => void;
-  switchRole: (role: UserRole) => void;
-  logout: () => void;
+  updateProfile: (updates: { name?: string; phone?: string; workLocation?: string }) => Promise<User>;
+  logout: () => Promise<void>;
   isLoading: boolean;
-  refreshUsers: () => User[];
+  refreshUsers: () => Promise<User[]>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -25,25 +25,92 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [users, setUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  const refreshUsers = () => {
-    const loadedUsers = storage.getUsers();
-    setUsers(loadedUsers);
-    return loadedUsers;
+  const refreshUsers = async (): Promise<User[]> => {
+    try {
+      const profiles = await api.getProfiles();
+      setUsers(profiles);
+      return profiles;
+    } catch (e) {
+      const local = storage.getUsers();
+      setUsers(local);
+      return local;
+    }
   };
 
+  // Listen to active Supabase authentication state
   useEffect(() => {
-    const loadedUsers = refreshUsers();
-    const currentId = storage.getCurrentUserId();
-    if (currentId) {
-      const currentUser = loadedUsers.find(u => u.id === currentId);
-      if (currentUser) {
-        setUser(currentUser);
-        setRole(currentUser.role);
-      } else {
+    let isMounted = true;
+
+    const fetchSessionAndProfile = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', session.user.id)
+            .maybeSingle();
+
+          if (profile && isMounted) {
+            const mapped = mapProfileToUser(profile);
+            setUser(mapped);
+            setRole(mapped.role);
+            storage.setCurrentUserId(mapped.id);
+            storage.addUser(mapped);
+          } else if (isMounted) {
+            setUser(null);
+            storage.setCurrentUserId(null);
+          }
+        } else if (isMounted) {
+          setUser(null);
+          storage.setCurrentUserId(null);
+        }
+      } catch (err) {
+        console.error('Error fetching auth session:', err);
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+          refreshUsers();
+        }
+      }
+    };
+
+    fetchSessionAndProfile();
+
+    // Supabase Auth State Change Listener
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (session?.user) {
+        try {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', session.user.id)
+            .maybeSingle();
+
+          if (profile && isMounted) {
+            const mapped = mapProfileToUser(profile);
+            setUser(mapped);
+            setRole(mapped.role);
+            storage.setCurrentUserId(mapped.id);
+            storage.addUser(mapped);
+          }
+        } catch (e) {
+          console.error('Error loading profile on auth state change:', e);
+        }
+      } else if (isMounted) {
+        setUser(null);
         storage.setCurrentUserId(null);
       }
-    }
-    setIsLoading(false);
+      if (isMounted) {
+        setIsLoading(false);
+        refreshUsers();
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      authListener.subscription.unsubscribe();
+    };
   }, []);
 
   const login = async (email: string, password?: string) => {
@@ -52,7 +119,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const loggedUser = await api.login(email, password);
       setUser(loggedUser);
       setRole(loggedUser.role);
-      refreshUsers();
+      await refreshUsers();
     } finally {
       setIsLoading(false);
     }
@@ -60,35 +127,40 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const addEmployee = async (params: AddEmployeeParams): Promise<User> => {
     const newUser = await api.addEmployee(params);
-    refreshUsers();
+    await refreshUsers();
     return newUser;
   };
 
   const deleteEmployee = async (userId: string): Promise<void> => {
     await api.removeEmployee(userId);
-    refreshUsers();
+    await refreshUsers();
     if (user?.id === userId) {
       setUser(null);
+      await supabase.auth.signOut();
     }
   };
 
-  const switchUser = (userId: string) => {
-    const loadedUsers = refreshUsers();
-    const target = loadedUsers.find(u => u.id === userId);
-    if (target) {
-      storage.setCurrentUserId(target.id);
-      setUser(target);
-      setRole(target.role);
+  const updateProfile = async (updates: { name?: string; phone?: string; workLocation?: string }): Promise<User> => {
+    if (!user) throw new Error('No authenticated user.');
+    const updatedUser = await api.updateProfile(user.id, updates);
+    // Update the avatar URL if name changed (initials-based avatar)
+    if (updates.name) {
+      updatedUser.profileImage = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(updates.name)}&backgroundColor=0c8ee9,0270c7`;
     }
+    setUser(updatedUser);
+    storage.updateUser(updatedUser);
+    return updatedUser;
   };
 
-  const switchRole = (newRole: UserRole) => {
-    setRole(newRole);
-  };
-
-  const logout = () => {
-    storage.setCurrentUserId(null);
-    setUser(null);
+  const logout = async () => {
+    setIsLoading(true);
+    try {
+      await supabase.auth.signOut();
+      storage.setCurrentUserId(null);
+      setUser(null);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -100,8 +172,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         login,
         addEmployee,
         deleteEmployee,
-        switchUser,
-        switchRole,
+        updateProfile,
         logout,
         isLoading,
         refreshUsers

@@ -56,7 +56,7 @@ export const LoginPage: React.FC = () => {
         department,
         designation,
         employeeType,
-        role: accountRole,
+        role: 'EMPLOYEE',
         joiningDate: new Date().toISOString().split('T')[0]
       });
 
@@ -270,11 +270,10 @@ export const LoginPage: React.FC = () => {
                       Account Role
                     </label>
                     <select
-                      value={accountRole}
-                      onChange={(e) => setAccountRole(e.target.value as UserRole)}
-                      className="w-full px-3 py-2.5 rounded-2xl bg-slate-800 border border-slate-700 text-white text-xs focus:outline-none focus:border-brand-500 cursor-pointer font-bold text-amber-400"
+                      value="EMPLOYEE"
+                      disabled
+                      className="w-full px-3 py-2.5 rounded-2xl bg-slate-800/60 border border-slate-700 text-slate-300 text-xs focus:outline-none cursor-not-allowed font-bold"
                     >
-                      <option value="ADMIN">Admin / Manager</option>
                       <option value="EMPLOYEE">Employee / Intern</option>
                     </select>
                   </div>

@@ -28,7 +28,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     onCloseMobile();
   };
 
-  const isAdmin = role === 'ADMIN' || role === 'MANAGER';
+  const isAdmin = role === 'ADMIN';
 
   // Navigation Items defined cleanly per role
   const navItems = isAdmin

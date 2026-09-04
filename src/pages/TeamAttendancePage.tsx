@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Search, Filter, Download, ExternalLink, ShieldAlert, UserPlus } from 'lucide-react';
+import { Users, Search, Filter, Download, ExternalLink, ShieldAlert, UserPlus, Coffee, Clock } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useWorkClock } from '../context/WorkClockContext';
 import { TeamMemberStatus, User } from '../types';
@@ -24,13 +24,13 @@ export const TeamAttendancePage: React.FC = () => {
     return () => clearInterval(interval);
   }, [users.length]);
 
-  const isManagerOrAdmin = role === 'MANAGER' || role === 'ADMIN';
+  const isAdmin = role === 'ADMIN';
 
-  if (!isManagerOrAdmin) {
+  if (!isAdmin) {
     return (
       <div className="p-8 text-center bg-slate-900 border border-slate-800 rounded-3xl space-y-4">
         <ShieldAlert className="w-12 h-12 text-rose-400 mx-auto" />
-        <h3 className="text-xl font-bold text-white">Manager / Admin Access Required</h3>
+        <h3 className="text-xl font-bold text-white">Admin Access Required</h3>
         <p className="text-xs text-slate-400 max-w-md mx-auto">
           Team Attendance is restricted to the Administrator.
         </p>
@@ -129,103 +129,124 @@ export const TeamAttendancePage: React.FC = () => {
         ))}
       </div>
 
-      {/* Team Table */}
-      <div className="rounded-3xl bg-slate-900/80 border border-slate-800 overflow-hidden shadow-xl glass-panel">
-        <div className="overflow-x-auto custom-scrollbar">
-          <table className="w-full text-left text-xs sm:text-sm">
-            <thead className="bg-slate-950/80 text-slate-400 uppercase font-semibold text-xs border-b border-slate-800">
-              <tr>
-                <th className="p-4">Employee</th>
-                <th className="p-4">ID</th>
-                <th className="p-4">Department</th>
-                <th className="p-4">Login Time</th>
-                <th className="p-4">Status</th>
-                <th className="p-4">Current Activity</th>
-                <th className="p-4">Break Started</th>
-                <th className="p-4">Total Break</th>
-                <th className="p-4">Break Remaining</th>
-                <th className="p-4">Work Time</th>
-                <th className="p-4">Last Activity</th>
-                <th className="p-4">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800/60">
-              {filteredTeam.length === 0 ? (
-                <tr>
-                  <td colSpan={12} className="p-8 text-center text-slate-400">
-                    No employees matching the search criteria.
-                  </td>
-                </tr>
-              ) : (
-                filteredTeam.map(m => {
-                  const breakUsedMins = Math.floor(m.totalBreakSecondsToday / 60);
-                  const breakRemMins = Math.floor(m.remainingBreakSecondsToday / 60);
-
-                  return (
-                    <tr
-                      key={m.user.id}
-                      onClick={() => setSelectedEmployee(m.user)}
-                      className="hover:bg-slate-800/50 cursor-pointer transition-colors"
-                    >
-                      <td className="p-4 font-semibold text-white">
-                        <div className="flex items-center gap-3">
-                          <img
-                            src={m.user.profileImage}
-                            alt={m.user.name}
-                            className="w-8 h-8 rounded-full object-cover border border-slate-700"
-                          />
-                          <div>
-                            <div className="font-bold text-white flex items-center gap-1.5">
-                              {m.user.name}
-                              <span className="text-[9px] px-1.5 py-0.2 rounded bg-brand-500/20 text-brand-300 border border-brand-500/30">
-                                {m.user.employeeType || 'Employee'}
-                              </span>
-                            </div>
-                            <div className="text-[10px] text-slate-400">{m.user.designation}</div>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="p-4 font-mono text-brand-300 font-semibold">{m.user.employeeId}</td>
-                      <td className="p-4 text-slate-300">{m.user.department}</td>
-                      <td className="p-4 font-mono text-emerald-400">
-                        {m.clockInTimeFormatted ? (
-                          <span>
-                            {m.clockInTimeFormatted}
-                            {m.attendanceToday?.isLate && (
-                              <span className="block text-[10px] text-amber-400 font-sans">
-                                Late by {m.attendanceToday.lateMinutes} mins
-                              </span>
-                            )}
-                          </span>
-                        ) : '---'}
-                      </td>
-                      <td className="p-4">{getStatusPill(m.currentStatus)}</td>
-                      <td className="p-4 max-w-xs truncate text-slate-200">"{m.currentActivity || '---'}"</td>
-                      <td className="p-4 font-mono text-amber-300">{m.breakStartedFormatted || '---'}</td>
-                      <td className="p-4 font-mono text-amber-400 font-bold">{breakUsedMins} min</td>
-                      <td className="p-4 font-mono text-emerald-400 font-bold">{breakRemMins} min</td>
-                      <td className="p-4 font-mono font-bold text-brand-300">{formatSecondsToHM(m.totalWorkSecondsToday)}</td>
-                      <td className="p-4 text-slate-400 text-xs">{m.lastActive}</td>
-                      <td className="p-4">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedEmployee(m.user);
-                          }}
-                          className="p-1.5 text-slate-400 hover:text-brand-400 hover:bg-slate-800 rounded-lg"
-                          title="View Employee Profile & Exact Breaks"
-                        >
-                          <ExternalLink className="w-4 h-4" />
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
+      {/* Team Table / Clean Empty State */}
+      {team.length === 0 ? (
+        <div className="py-16 px-4 text-center space-y-4 bg-slate-900/80 rounded-3xl border border-slate-800 glass-card">
+          <div className="w-16 h-16 rounded-full bg-slate-800 flex items-center justify-center mx-auto text-slate-400 border border-slate-700">
+            <Users className="w-8 h-8" />
+          </div>
+          <div className="space-y-1">
+            <h3 className="text-xl font-bold text-white">No employees registered yet.</h3>
+            <p className="text-xs text-slate-400 max-w-md mx-auto">
+              Add employees or interns to monitor their live clock-in times, break intervals, and workday productivity.
+            </p>
+          </div>
+          <button
+            onClick={() => setIsAddEmployeeModalOpen(true)}
+            className="px-6 py-3 rounded-2xl bg-gradient-to-r from-brand-500 to-brand-600 hover:from-brand-600 hover:to-brand-700 text-white font-bold text-xs shadow-lg shadow-brand-500/25 inline-flex items-center gap-2"
+          >
+            <UserPlus className="w-4 h-4" />
+            <span>+ Add Employee</span>
+          </button>
         </div>
-      </div>
+      ) : (
+        <div className="rounded-3xl bg-slate-900/80 border border-slate-800 overflow-hidden shadow-xl glass-panel">
+          <div className="overflow-x-auto custom-scrollbar">
+            <table className="w-full text-left text-xs sm:text-sm">
+              <thead className="bg-slate-950/80 text-slate-400 uppercase font-semibold text-xs border-b border-slate-800">
+                <tr>
+                  <th className="p-4">Employee</th>
+                  <th className="p-4">ID</th>
+                  <th className="p-4">Department</th>
+                  <th className="p-4">Login Time</th>
+                  <th className="p-4">Status</th>
+                  <th className="p-4">Current Activity</th>
+                  <th className="p-4">Break Started</th>
+                  <th className="p-4">Total Break</th>
+                  <th className="p-4">Break Remaining</th>
+                  <th className="p-4">Work Time</th>
+                  <th className="p-4">Last Activity</th>
+                  <th className="p-4">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60">
+                {filteredTeam.length === 0 ? (
+                  <tr>
+                    <td colSpan={12} className="p-8 text-center text-slate-400">
+                      No employees matching the current filter.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredTeam.map(m => {
+                    const breakUsedMins = Math.floor(m.totalBreakSecondsToday / 60);
+                    const breakRemMins = Math.floor(m.remainingBreakSecondsToday / 60);
+
+                    return (
+                      <tr
+                        key={m.user.id}
+                        onClick={() => setSelectedEmployee(m.user)}
+                        className="hover:bg-slate-800/50 cursor-pointer transition-colors"
+                      >
+                        <td className="p-4 font-semibold text-white">
+                          <div className="flex items-center gap-3">
+                            <img
+                              src={m.user.profileImage}
+                              alt={m.user.name}
+                              className="w-8 h-8 rounded-full object-cover border border-slate-700"
+                            />
+                            <div>
+                              <div className="font-bold text-white flex items-center gap-1.5">
+                                {m.user.name}
+                                <span className="text-[9px] px-1.5 py-0.2 rounded bg-brand-500/20 text-brand-300 border border-brand-500/30">
+                                  {m.user.employeeType || 'Employee'}
+                                </span>
+                              </div>
+                              <div className="text-[10px] text-slate-400">{m.user.designation}</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="p-4 font-mono text-brand-300 font-semibold">{m.user.employeeId}</td>
+                        <td className="p-4 text-slate-300">{m.user.department}</td>
+                        <td className="p-4 font-mono text-emerald-400">
+                          {m.clockInTimeFormatted ? (
+                            <span>
+                              {m.clockInTimeFormatted}
+                              {m.attendanceToday?.isLate && (
+                                <span className="block text-[10px] text-amber-400 font-sans">
+                                  Late by {m.attendanceToday.lateMinutes} mins
+                                </span>
+                              )}
+                            </span>
+                          ) : '---'}
+                        </td>
+                        <td className="p-4">{getStatusPill(m.currentStatus)}</td>
+                        <td className="p-4 max-w-xs truncate text-slate-200">"{m.currentActivity || '---'}"</td>
+                        <td className="p-4 font-mono text-amber-300">{m.breakStartedFormatted || '---'}</td>
+                        <td className="p-4 font-mono text-amber-400 font-bold">{breakUsedMins} min</td>
+                        <td className="p-4 font-mono text-emerald-400 font-bold">{breakRemMins} min</td>
+                        <td className="p-4 font-mono font-bold text-brand-300">{formatSecondsToHM(m.totalWorkSecondsToday)}</td>
+                        <td className="p-4 text-slate-400 text-xs">{m.lastActive}</td>
+                        <td className="p-4">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedEmployee(m.user);
+                            }}
+                            className="p-1.5 text-slate-400 hover:text-brand-400 hover:bg-slate-800 rounded-lg"
+                            title="View Employee Profile & Exact Breaks"
+                          >
+                            <ExternalLink className="w-4 h-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       <AddEmployeeModal />
       <EmployeeDetailModal

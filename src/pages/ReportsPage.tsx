@@ -13,33 +13,19 @@ export const ReportsPage: React.FC = () => {
 
   useEffect(() => {
     api.getReportsSummary().then(setSummary);
+    const interval = setInterval(() => {
+      api.getReportsSummary().then(setSummary);
+    }, 5000);
+    return () => clearInterval(interval);
   }, []);
 
-  // Daily Work Hours Chart Data (Hours per day for past week)
-  const dailyWorkData = [
-    { day: 'Mon', workHours: 8.6, breakMins: 30, target: 8.0 },
-    { day: 'Tue', workHours: 8.8, breakMins: 45, target: 8.0 },
-    { day: 'Wed', workHours: 7.8, breakMins: 35, target: 8.0 },
-    { day: 'Thu', workHours: 8.2, breakMins: 40, target: 8.0 },
-    { day: 'Fri (Today)', workHours: 8.5, breakMins: 45, target: 8.0 },
-  ];
+  const dailyWorkData = summary?.dailyWorkData || [];
+  const breakDistributionData = summary?.breakDistributionData || [];
+  const monthlyTrendData = summary?.monthlyTrendData || [];
 
-  // Break Type Distribution Pie Data
-  const breakDistributionData = [
-    { name: 'Lunch', value: 45, color: '#f59e0b' },
-    { name: 'Tea/Coffee', value: 25, color: '#3b82f6' },
-    { name: 'Personal', value: 15, color: '#8b5cf6' },
-    { name: 'Meeting', value: 15, color: '#10b981' },
-  ];
-
-  // Monthly Attendance Trend
-  const monthlyTrendData = [
-    { month: 'May', attendancePct: 96, avgHours: 8.2 },
-    { month: 'Jun', attendancePct: 98, avgHours: 8.3 },
-    { month: 'Jul', attendancePct: 94, avgHours: 8.1 },
-    { month: 'Aug', attendancePct: 95, avgHours: 8.4 },
-    { month: 'Sep', attendancePct: 97, avgHours: 8.2 },
-  ];
+  const hasAnyDailyWork = dailyWorkData.some((d: any) => d.workHours > 0 || d.breakMins > 0);
+  const hasAnyBreakData = breakDistributionData.length > 0;
+  const hasAnyMonthlyData = monthlyTrendData.some((d: any) => d.attendancePct > 0 || d.avgHours > 0);
 
   const handleExportAll = (type: 'csv' | 'excel' | 'pdf') => {
     const allRecords = storage.getAttendanceRecords();
@@ -85,32 +71,32 @@ export const ReportsPage: React.FC = () => {
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
         <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 glass-card">
           <span className="text-[10px] text-slate-400 font-bold uppercase">Total Employees</span>
-          <div className="text-2xl font-black text-white mt-1">{summary?.totalEmployees || 4}</div>
+          <div className="text-2xl font-black text-white mt-1">{summary?.totalEmployees ?? 0}</div>
         </div>
 
         <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 glass-card">
           <span className="text-[10px] text-slate-400 font-bold uppercase">Present Today</span>
-          <div className="text-2xl font-black text-emerald-400 mt-1">{summary?.presentToday || 3}</div>
+          <div className="text-2xl font-black text-emerald-400 mt-1">{summary?.presentToday ?? 0}</div>
         </div>
 
         <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 glass-card">
           <span className="text-[10px] text-slate-400 font-bold uppercase">Currently Working</span>
-          <div className="text-2xl font-black text-brand-400 mt-1">{summary?.workingCount || 2}</div>
+          <div className="text-2xl font-black text-brand-400 mt-1">{summary?.workingCount ?? 0}</div>
         </div>
 
         <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 glass-card">
           <span className="text-[10px] text-slate-400 font-bold uppercase">On Break</span>
-          <div className="text-2xl font-black text-amber-400 mt-1">{summary?.breakCount || 1}</div>
+          <div className="text-2xl font-black text-amber-400 mt-1">{summary?.breakCount ?? 0}</div>
         </div>
 
         <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 glass-card">
           <span className="text-[10px] text-slate-400 font-bold uppercase">Attendance %</span>
-          <div className="text-2xl font-black text-emerald-400 mt-1">{summary?.attendancePercentage || '95%'}</div>
+          <div className="text-2xl font-black text-emerald-400 mt-1">{summary?.attendancePercentage ?? '0%'}</div>
         </div>
 
         <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 glass-card">
           <span className="text-[10px] text-slate-400 font-bold uppercase">Avg Work Hours</span>
-          <div className="text-2xl font-black text-blue-300 font-mono mt-1">{summary?.averageWorkingHours || '08h 15m'}</div>
+          <div className="text-2xl font-black text-blue-300 font-mono mt-1">{summary?.averageWorkingHours ?? '00h 00m'}</div>
         </div>
       </div>
 
@@ -125,18 +111,27 @@ export const ReportsPage: React.FC = () => {
             <span className="text-xs text-slate-400">Target: 8.0 hrs</span>
           </div>
 
-          <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={dailyWorkData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                <XAxis dataKey="day" stroke="#94a3b8" fontSize={12} />
-                <YAxis stroke="#94a3b8" fontSize={12} domain={[0, 10]} />
-                <Tooltip
-                  contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '12px', color: '#fff' }}
-                />
-                <Bar dataKey="workHours" fill="#0c8ee9" radius={[8, 8, 0, 0]} name="Work Hours" />
-              </BarChart>
-            </ResponsiveContainer>
+          <div className="h-64 w-full flex items-center justify-center">
+            {!hasAnyDailyWork ? (
+              <div className="flex flex-col items-center justify-center text-slate-500 space-y-2 p-6 text-center">
+                <Clock className="w-8 h-8 text-slate-600" />
+                <p className="text-xs text-slate-400 font-medium">No daily work hours recorded yet</p>
+                <p className="text-[11px] text-slate-500">Data will populate automatically once employees clock in.</p>
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={dailyWorkData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                  <XAxis dataKey="day" stroke="#94a3b8" fontSize={12} />
+                  <YAxis stroke="#94a3b8" fontSize={12} domain={[0, 10]} />
+                  <Tooltip
+                    contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '12px', color: '#fff' }}
+                    formatter={(val: any) => [`${val} hrs`, 'Work Hours']}
+                  />
+                  <Bar dataKey="workHours" fill="#0c8ee9" radius={[8, 8, 0, 0]} name="Work Hours" />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </div>
 
@@ -150,27 +145,36 @@ export const ReportsPage: React.FC = () => {
           </div>
 
           <div className="h-64 w-full flex items-center justify-center">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={breakDistributionData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={60}
-                  outerRadius={90}
-                  paddingAngle={5}
-                  dataKey="value"
-                >
-                  {breakDistributionData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip
-                  contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '12px', color: '#fff' }}
-                />
-                <Legend verticalAlign="bottom" height={36} />
-              </PieChart>
-            </ResponsiveContainer>
+            {!hasAnyBreakData ? (
+              <div className="flex flex-col items-center justify-center text-slate-500 space-y-2 p-6 text-center">
+                <Coffee className="w-8 h-8 text-slate-600" />
+                <p className="text-xs text-slate-400 font-medium">No break records logged yet</p>
+                <p className="text-[11px] text-slate-500">Break categories and intervals will appear once taken.</p>
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={breakDistributionData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={60}
+                    outerRadius={90}
+                    paddingAngle={5}
+                    dataKey="value"
+                  >
+                    {breakDistributionData.map((entry: any, index: number) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '12px', color: '#fff' }}
+                    formatter={(val: any) => [`${val}%`, 'Share']}
+                  />
+                  <Legend verticalAlign="bottom" height={36} />
+                </PieChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </div>
 
@@ -183,18 +187,27 @@ export const ReportsPage: React.FC = () => {
             <span className="text-xs text-slate-400">Last 5 Months</span>
           </div>
 
-          <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={monthlyTrendData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                <XAxis dataKey="month" stroke="#94a3b8" fontSize={12} />
-                <YAxis stroke="#94a3b8" fontSize={12} domain={[80, 100]} />
-                <Tooltip
-                  contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '12px', color: '#fff' }}
-                />
-                <Line type="monotone" dataKey="attendancePct" stroke="#10b981" strokeWidth={3} name="Attendance Rate %" />
-              </LineChart>
-            </ResponsiveContainer>
+          <div className="h-64 w-full flex items-center justify-center">
+            {!hasAnyMonthlyData ? (
+              <div className="flex flex-col items-center justify-center text-slate-500 space-y-2 p-6 text-center">
+                <TrendingUp className="w-8 h-8 text-slate-600" />
+                <p className="text-xs text-slate-400 font-medium">No historical attendance data yet</p>
+                <p className="text-[11px] text-slate-500">Monthly attendance rates will update over time.</p>
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={monthlyTrendData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                  <XAxis dataKey="month" stroke="#94a3b8" fontSize={12} />
+                  <YAxis stroke="#94a3b8" fontSize={12} domain={[0, 100]} />
+                  <Tooltip
+                    contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '12px', color: '#fff' }}
+                    formatter={(val: any) => [`${val}%`, 'Attendance Rate']}
+                  />
+                  <Line type="monotone" dataKey="attendancePct" stroke="#10b981" strokeWidth={3} name="Attendance Rate %" />
+                </LineChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </div>
       </div>

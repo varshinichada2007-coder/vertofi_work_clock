@@ -1,4 +1,5 @@
 import { storage } from './storage';
+import { supabase } from '../lib/supabase';
 import {
   User, AttendanceRecord, BreakRecord, WorkSession, ActivityRecord,
   TeamMemberStatus, BreakType, EmployeeStatus, UserRole, EmployeeType
@@ -17,71 +18,153 @@ export interface AddEmployeeParams {
   workLocation?: string;
   phone?: string;
   profileImage?: string;
+  managerName?: string;
 }
 
 export const MAX_DAILY_BREAK_SECONDS = 3600; // 60 minutes = 1 hour break cap
 
+// Helper to map Supabase snake_case profiles to User interface
+export const mapProfileToUser = (p: any): User => ({
+  id: p.id,
+  name: p.name,
+  email: p.email,
+  employeeId: p.employee_id || p.employeeId,
+  department: p.department || 'Engineering',
+  designation: p.designation || 'Software Engineer',
+  role: p.role === 'ADMIN' ? 'ADMIN' : 'EMPLOYEE',
+  employeeType: (p.employee_type || p.employeeType) === 'Intern' ? 'Intern' : 'Employee',
+  joiningDate: p.joining_date || p.joiningDate || new Date().toISOString().split('T')[0],
+  profileImage: p.profile_image || p.profileImage || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(p.name)}&backgroundColor=0c8ee9,0270c7`,
+  workLocation: p.work_location || p.workLocation || 'Work From Home',
+  phone: p.phone || '+91 98765 43210',
+  managerName: p.manager_name || p.managerName,
+  createdAt: p.created_at || p.createdAt || new Date().toISOString()
+});
+
 export const api = {
-  // Authentication - Real login validation
+  // Authentication - Real Supabase email/password login
   async login(email: string, password?: string): Promise<User> {
-    const users = storage.getUsers();
-    const found = users.find(u => u.email.toLowerCase() === email.toLowerCase());
+    const trimmedEmail = email.trim().toLowerCase();
 
-    if (!found) {
-      throw new Error('Account not found with this email. Please sign up or contact your Admin.');
+    if (!password) {
+      throw new Error('Password is required.');
     }
 
-    if (found.password && password && found.password !== password) {
-      throw new Error('Invalid password. Please check your credentials.');
+    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+      email: trimmedEmail,
+      password
+    });
+
+    if (authError || !authData.user) {
+      throw new Error(authError?.message || 'Invalid email or password. Please check your credentials.');
     }
 
-    storage.setCurrentUserId(found.id);
-    return found;
+    // Retrieve user profile from public.profiles
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', authData.user.id)
+      .single();
+
+    if (profileError || !profile) {
+      throw new Error('Profile record not found for this account. Please contact your Administrator.');
+    }
+
+    const user = mapProfileToUser(profile);
+    storage.setCurrentUserId(user.id);
+    storage.addUser(user); // Cache locally for fast access
+
+    return user;
   },
 
-  // Admin Action / Sign Up: Add Employee or Intern
+  // Secure Server-Side Employee Creation via Supabase Edge Function
+  // Preserves active Admin session without logging out or session switching
   async addEmployee(params: AddEmployeeParams): Promise<User> {
-    const users = storage.getUsers();
-    const existing = users.find(u => u.email.toLowerCase() === params.email.trim().toLowerCase());
-    if (existing) {
-      throw new Error('An account with this email already exists.');
-    }
-
-    const userId = `usr_${Date.now()}`;
-    const autoEmpId = params.employeeId?.trim() || `EMP${String(users.length + 1).padStart(3, '0')}`;
-    const profileImage = params.profileImage?.trim() || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(params.name)}&backgroundColor=0c8ee9,0270c7`;
-
-    // First user registering in system is automatically ADMIN, or explicit role if provided
-    const isFirstUser = users.length === 0;
-    const assignedRole: UserRole = params.role || (isFirstUser ? 'ADMIN' : 'EMPLOYEE');
-
-    const newUser: User = {
-      id: userId,
+    const payload = {
       name: params.name.trim(),
       email: params.email.trim().toLowerCase(),
       password: params.password || 'password123',
-      employeeId: autoEmpId,
+      employeeId: params.employeeId?.trim(),
       department: params.department.trim(),
       designation: params.designation.trim(),
-      role: assignedRole,
       employeeType: params.employeeType || 'Employee',
       joiningDate: params.joiningDate || new Date().toISOString().split('T')[0],
-      profileImage,
       workLocation: params.workLocation || 'Work From Home',
       phone: params.phone || '+91 98765 43210',
-      createdAt: new Date().toISOString()
+      profileImage: params.profileImage?.trim()
     };
 
-    storage.addUser(newUser);
-    return newUser;
+    // Invoke the secure Supabase Edge Function
+    const { data, error } = await supabase.functions.invoke('create-employee', {
+      body: payload
+    });
+
+    if (error) {
+      throw new Error(error.message || 'Failed to create employee via backend service.');
+    }
+
+    if (data?.error) {
+      throw new Error(data.error);
+    }
+
+    const createdUser: User = mapProfileToUser(data.user || payload);
+    storage.addUser(createdUser);
+    return createdUser;
+  },
+
+  // Update own profile (name, phone, workLocation) in Supabase
+  async updateProfile(userId: string, updates: { name?: string; phone?: string; workLocation?: string }): Promise<User> {
+    const payload: Record<string, any> = {
+      updated_at: new Date().toISOString()
+    };
+    if (updates.name !== undefined) payload.name = updates.name.trim();
+    if (updates.phone !== undefined) payload.phone = updates.phone.trim();
+    if (updates.workLocation !== undefined) payload.work_location = updates.workLocation.trim();
+
+    const { data, error } = await supabase
+      .from('profiles')
+      .update(payload)
+      .eq('id', userId)
+      .select('*')
+      .single();
+
+    if (error || !data) {
+      throw new Error(error?.message || 'Failed to update profile in database.');
+    }
+
+    const updatedUser = mapProfileToUser(data);
+    storage.updateUser(updatedUser);
+    return updatedUser;
   },
 
   // Admin Action: Remove Employee
   async removeEmployee(userId: string): Promise<void> {
-    const user = storage.getUsers().find(u => u.id === userId);
-    if (!user) throw new Error('Employee not found.');
-    if (user.role === 'ADMIN') throw new Error('Cannot delete the primary Admin account.');
+    const { error } = await supabase
+      .from('profiles')
+      .delete()
+      .eq('id', userId);
+
+    if (error) {
+      console.warn('Supabase profile deletion warning:', error.message);
+    }
+
     storage.deleteUser(userId);
+  },
+
+  // Fetch all profiles from Supabase (for Admin)
+  async getProfiles(): Promise<User[]> {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .order('created_at', { ascending: true });
+
+    if (error || !data) {
+      return storage.getUsers();
+    }
+
+    const mapped = data.map(mapProfileToUser);
+    mapped.forEach(u => storage.addUser(u));
+    return mapped;
   },
 
   // Today's Attendance & Active State
@@ -106,7 +189,6 @@ export const api = {
 
     const now = new Date();
     const nowMs = now.getTime();
-    // Exact timestamp display e.g. "09:07:32 AM"
     const timeFormatted = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     const todayStr = now.toISOString().split('T')[0];
     const dayName = now.toLocaleDateString('en-US', { weekday: 'long' });
@@ -207,7 +289,6 @@ export const api = {
       throw new Error('You can only take a break while in WORKING status.');
     }
 
-    // Check if employee has already used all 60 minutes (3600 seconds)
     if (currentState.accumulatedBreakSeconds >= MAX_DAILY_BREAK_SECONDS) {
       throw new Error('Your 1-hour daily break allowance has been fully used.');
     }
@@ -264,7 +345,6 @@ export const api = {
     const newAccumulatedBreak = currentState.accumulatedBreakSeconds + breakDurationSec;
     const timeFormatted = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
-    // Calculate remaining break allowance
     const remainingBreakSec = Math.max(0, MAX_DAILY_BREAK_SECONDS - newAccumulatedBreak);
     const remainingMins = Math.floor(remainingBreakSec / 60);
 
@@ -329,8 +409,7 @@ export const api = {
     const breakSec = currentState.accumulatedBreakSeconds;
     const netWorkSec = Math.max(0, totalElapsedSec - breakSec);
 
-    // Required productive work is 8 hours (28800 seconds)
-    const isCompleted = netWorkSec >= 28800;
+    const isCompleted = netWorkSec >= 28800; // 8 hours = 28,800s
     const completionStatus = isCompleted ? '8 Hour Work Completed' : 'Workday Incomplete';
 
     const newState = {
@@ -443,11 +522,25 @@ export const api = {
 
   // Admin Oversight - Real-time Team Attendance Directory
   async getTeamAttendance(): Promise<TeamMemberStatus[]> {
-    // Only return non-admin employees/interns
-    const employees = storage.getUsers().filter(u => u.role !== 'ADMIN');
+    let employees = storage.getUsers().filter(u => u.role !== 'ADMIN');
+
+    // Attempt to refresh from Supabase
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .neq('role', 'ADMIN');
+
+      if (!error && data && data.length > 0) {
+        employees = data.map(mapProfileToUser);
+        employees.forEach(u => storage.addUser(u));
+      }
+    } catch (e) {
+      // Fallback to local
+    }
+
     const todayStr = new Date().toISOString().split('T')[0];
     const attendanceRecords = storage.getAttendanceRecords();
-    const breakRecords = storage.getBreakRecords();
 
     return employees.map(user => {
       const clockState = storage.getActiveClockState(user.id);
@@ -507,22 +600,144 @@ export const api = {
   },
 
   async getEmployeeById(id: string): Promise<User | undefined> {
-    return storage.getUsers().find(u => u.id === id || u.employeeId === id);
+    const local = storage.getUsers().find(u => u.id === id || u.employeeId === id);
+    if (local) return local;
+
+    try {
+      const { data } = await supabase
+        .from('profiles')
+        .select('*')
+        .or(`id.eq.${id},employee_id.eq.${id}`)
+        .maybeSingle();
+
+      if (data) {
+        const mapped = mapProfileToUser(data);
+        storage.addUser(mapped);
+        return mapped;
+      }
+    } catch (e) {
+      // Fallback
+    }
+    return undefined;
   },
 
-  // Reports API for Admin
+  // Reports API for Admin - Calculated dynamically from real employee records
   async getReportsSummary() {
-    const employees = storage.getUsers().filter(u => u.role !== 'ADMIN');
     const team = await this.getTeamAttendance();
-
-    const totalEmployees = employees.length;
+    const totalEmployees = team.length;
     const workingCount = team.filter(t => t.currentStatus === 'WORKING').length;
     const breakCount = team.filter(t => t.currentStatus === 'ON_BREAK').length;
     const clockedOutCount = team.filter(t => t.currentStatus === 'CLOCKED_OUT').length;
     const presentToday = team.filter(t => t.currentStatus !== 'NOT_CLOCKED_IN').length;
-    const notClockedInCount = totalEmployees - presentToday;
+    const notClockedInCount = Math.max(0, totalEmployees - presentToday);
 
     const completedWorkdayCount = team.filter(t => t.attendanceToday?.completionStatus === '8 Hour Work Completed').length;
+
+    // Calculate real average working hours
+    const totalWorkSec = team.reduce((acc, m) => acc + m.totalWorkSecondsToday, 0);
+    const avgSec = presentToday > 0 ? Math.floor(totalWorkSec / presentToday) : 0;
+    const avgHoursStr = `${Math.floor(avgSec / 3600).toString().padStart(2, '0')}h ${Math.floor((avgSec % 3600) / 60).toString().padStart(2, '0')}m`;
+
+    const attendancePctStr = totalEmployees > 0 ? `${Math.round((presentToday / totalEmployees) * 100)}%` : '0%';
+
+    // Dynamic Daily Work Hours for current week (Mon to Fri)
+    const now = new Date();
+    const currentDayOfWeek = now.getDay(); // 0 = Sun, 1 = Mon ...
+    const monday = new Date(now);
+    monday.setDate(now.getDate() - (currentDayOfWeek === 0 ? 6 : currentDayOfWeek - 1));
+
+    const allAttendance = storage.getAttendanceRecords();
+    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+    const dailyWorkData = days.map((dayName, idx) => {
+      const targetDate = new Date(monday);
+      targetDate.setDate(monday.getDate() + idx);
+      const dateStr = targetDate.toISOString().split('T')[0];
+      const isToday = dateStr === now.toISOString().split('T')[0];
+
+      const dayRecords = allAttendance.filter(r => r.date === dateStr);
+      let dayWorkHours = 0;
+      let dayBreakMins = 0;
+
+      if (dayRecords.length > 0) {
+        const totalNetWork = dayRecords.reduce((acc, r) => acc + r.netWorkSeconds, 0);
+        const totalBreaks = dayRecords.reduce((acc, r) => acc + r.totalBreakSeconds, 0);
+        dayWorkHours = Math.round((totalNetWork / dayRecords.length / 3600) * 10) / 10;
+        dayBreakMins = Math.round(totalBreaks / dayRecords.length / 60);
+      } else if (isToday && presentToday > 0) {
+        dayWorkHours = Math.round((totalWorkSec / presentToday / 3600) * 10) / 10;
+        const totalBreakSec = team.reduce((acc, m) => acc + m.totalBreakSecondsToday, 0);
+        dayBreakMins = Math.round(totalBreakSec / presentToday / 60);
+      }
+
+      return {
+        day: isToday ? `${dayName} (Today)` : dayName,
+        workHours: dayWorkHours,
+        breakMins: dayBreakMins,
+        target: 8.0
+      };
+    });
+
+    // Dynamic Break Distribution from real break records
+    const allBreaks = storage.getBreakRecords();
+    const breakColorMap: Record<string, string> = {
+      'Lunch': '#f59e0b',
+      'Tea/Coffee': '#3b82f6',
+      'Personal': '#8b5cf6',
+      'Meeting': '#10b981',
+      'Other': '#ec4899'
+    };
+
+    const breakCountMap: Record<string, number> = {
+      'Lunch': 0,
+      'Tea/Coffee': 0,
+      'Personal': 0,
+      'Meeting': 0,
+      'Other': 0
+    };
+
+    allBreaks.forEach(b => {
+      if (breakCountMap[b.breakType] !== undefined) {
+        breakCountMap[b.breakType] += 1;
+      } else {
+        breakCountMap['Other'] += 1;
+      }
+    });
+
+    const totalBreaksCount = Object.values(breakCountMap).reduce((a, b) => a + b, 0);
+    const breakDistributionData = totalBreaksCount > 0
+      ? Object.entries(breakCountMap)
+          .filter(([_, val]) => val > 0)
+          .map(([name, val]) => ({
+            name,
+            value: Math.round((val / totalBreaksCount) * 100),
+            color: breakColorMap[name] || '#64748b'
+          }))
+      : [];
+
+    // Dynamic Monthly Trend from real records
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const monthlyTrendData = [];
+    for (let i = 4; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const mName = monthNames[d.getMonth()];
+      const mYear = d.getFullYear();
+      const mRecords = allAttendance.filter(r => {
+        const rd = new Date(r.date);
+        return rd.getMonth() === d.getMonth() && rd.getFullYear() === mYear;
+      });
+
+      const mPresent = mRecords.filter(r => r.status === 'Present' || r.status === 'Late').length;
+      const mPct = totalEmployees > 0 && mRecords.length > 0 ? Math.min(100, Math.round((mPresent / (totalEmployees * 20)) * 100)) : 0;
+      const mAvgHours = mRecords.length > 0
+        ? Math.round((mRecords.reduce((acc, r) => acc + r.netWorkSeconds, 0) / mRecords.length / 3600) * 10) / 10
+        : 0;
+
+      monthlyTrendData.push({
+        month: mName,
+        attendancePct: mPct,
+        avgHours: mAvgHours
+      });
+    }
 
     return {
       totalEmployees,
@@ -532,8 +747,11 @@ export const api = {
       clockedOutCount,
       notClockedInCount,
       completedWorkdayCount,
-      averageWorkingHours: totalEmployees > 0 ? '08h 00m' : '00h 00m',
-      attendancePercentage: totalEmployees > 0 ? `${Math.round((presentToday / totalEmployees) * 100)}%` : '0%'
+      averageWorkingHours: avgHoursStr,
+      attendancePercentage: attendancePctStr,
+      dailyWorkData,
+      breakDistributionData,
+      monthlyTrendData
     };
   }
 };

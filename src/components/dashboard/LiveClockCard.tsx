@@ -19,10 +19,10 @@ export const LiveClockCard: React.FC = () => {
     setIsClockOutModalOpen
   } = useWorkClock();
 
-  const isManagerOrAdmin = user?.role === 'ADMIN' || user?.role === 'MANAGER';
+  const isAdmin = user?.role === 'ADMIN';
 
   // Admin does not use employee clock controls
-  if (isManagerOrAdmin) {
+  if (isAdmin) {
     return null;
   }
 

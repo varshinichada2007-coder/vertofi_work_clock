@@ -14,7 +14,7 @@ const STORAGE_KEYS = {
   ACTIVE_CLOCK_PREFIX: 'vertofi_active_clock_',
   TIMELINE_PREFIX: 'vertofi_timeline_',
   SETTINGS: 'vertofi_settings',
-  CLEANED_FLAG: 'vertofi_demo_purged_v2'
+  CLEAN_SLATE_FLAG: 'vertofi_clean_slate_v4'
 };
 
 export interface ActiveClockState {
@@ -37,47 +37,29 @@ class StorageService {
   }
 
   private purgeLegacyDemoData() {
-    // Check if legacy cleanup is needed or if demo users exist
-    const usersStr = localStorage.getItem(STORAGE_KEYS.USERS);
-    if (usersStr) {
+    // Reset all previous demo/mock attendance and break records so app starts completely clean
+    if (!localStorage.getItem(STORAGE_KEYS.CLEAN_SLATE_FLAG)) {
       try {
-        const users: User[] = JSON.parse(usersStr);
-        const hasDemoUser = users.some(u =>
-          u.name.toLowerCase().includes('geethika') ||
-          u.name.toLowerCase().includes('parvatham') ||
-          u.name.toLowerCase().includes('rahul') ||
-          u.name.toLowerCase().includes('priya') ||
-          u.name.toLowerCase().includes('jenkins') ||
-          u.name.toLowerCase().includes('vertofi admin') ||
-          u.id === 'usr_admin' ||
-          u.id === 'user_geethika'
-        );
+        localStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify([]));
+        localStorage.setItem(STORAGE_KEYS.BREAKS, JSON.stringify([]));
+        localStorage.setItem(STORAGE_KEYS.SESSIONS, JSON.stringify([]));
+        localStorage.setItem(STORAGE_KEYS.ACTIVITIES, JSON.stringify([]));
 
-        if (hasDemoUser || !localStorage.getItem(STORAGE_KEYS.CLEANED_FLAG)) {
-          // Remove demo users from user list
-          const cleanUsers = users.filter(u =>
-            !u.name.toLowerCase().includes('geethika') &&
-            !u.name.toLowerCase().includes('parvatham') &&
-            !u.name.toLowerCase().includes('rahul') &&
-            !u.name.toLowerCase().includes('priya') &&
-            !u.name.toLowerCase().includes('jenkins') &&
-            !u.name.toLowerCase().includes('vertofi admin') &&
-            u.id !== 'usr_admin' &&
-            u.id !== 'user_geethika'
-          );
-
-          localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(cleanUsers));
-          localStorage.setItem(STORAGE_KEYS.CLEANED_FLAG, 'true');
-
-          // If active logged-in user was a demo user, log out
-          const currentId = localStorage.getItem(STORAGE_KEYS.CURRENT_USER_ID);
-          if (currentId === 'usr_admin' || currentId === 'user_geethika' || !cleanUsers.some(u => u.id === currentId)) {
-            localStorage.removeItem(STORAGE_KEYS.CURRENT_USER_ID);
+        // Keep only active authenticated user/admin
+        const usersStr = localStorage.getItem(STORAGE_KEYS.USERS);
+        if (usersStr) {
+          try {
+            const users: User[] = JSON.parse(usersStr);
+            const cleanUsers = users.filter(u => u.role === 'ADMIN');
+            localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(cleanUsers));
+          } catch {
+            localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify([]));
           }
         }
+
+        localStorage.setItem(STORAGE_KEYS.CLEAN_SLATE_FLAG, 'true');
       } catch (e) {
-        // Fallback clear if corrupted
-        localStorage.clear();
+        console.warn('Storage purge warning:', e);
       }
     }
   }
@@ -111,7 +93,12 @@ class StorageService {
 
   addUser(newUser: User): void {
     const users = this.getUsers();
-    users.push(newUser);
+    const index = users.findIndex(u => u.id === newUser.id || u.employeeId === newUser.employeeId);
+    if (index >= 0) {
+      users[index] = newUser;
+    } else {
+      users.push(newUser);
+    }
     localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
   }
 

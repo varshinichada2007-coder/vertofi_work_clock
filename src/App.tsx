@@ -23,15 +23,26 @@ import { SettingsPage } from './pages/SettingsPage';
 import { LoginPage } from './pages/LoginPage';
 
 const MainContent: React.FC = () => {
-  const { user } = useAuth();
+  const { user, isLoading } = useAuth();
   const [currentPath, setCurrentPath] = useState('dashboard');
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-10 h-10 border-4 border-brand-500/20 border-t-brand-500 rounded-full animate-spin" />
+          <p className="text-xs text-slate-400 font-medium">Loading Vertofi WorkClock...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!user) {
     return <LoginPage />;
   }
 
-  const isAdmin = user.role === 'ADMIN' || user.role === 'MANAGER';
+  const isAdmin = user.role === 'ADMIN';
 
   const getPageDetails = () => {
     switch (currentPath) {

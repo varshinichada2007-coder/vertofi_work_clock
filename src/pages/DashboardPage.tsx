@@ -78,32 +78,32 @@ export const DashboardPage: React.FC = () => {
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
             <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 glass-card">
               <span className="text-[10px] text-slate-400 font-bold uppercase">Total Employees</span>
-              <div className="text-2xl font-black text-white mt-1">{reportsSummary?.totalEmployees || employeesOnly.length}</div>
+              <div className="text-2xl font-black text-white mt-1">{reportsSummary?.totalEmployees ?? employeesOnly.length}</div>
             </div>
 
             <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 glass-card">
               <span className="text-[10px] text-slate-400 font-bold uppercase">Present Today</span>
-              <div className="text-2xl font-black text-emerald-400 mt-1">{reportsSummary?.presentToday || 0}</div>
+              <div className="text-2xl font-black text-emerald-400 mt-1">{reportsSummary?.presentToday ?? 0}</div>
             </div>
 
             <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 glass-card">
               <span className="text-[10px] text-slate-400 font-bold uppercase">Currently Working</span>
-              <div className="text-2xl font-black text-brand-400 mt-1">{reportsSummary?.workingCount || 0}</div>
+              <div className="text-2xl font-black text-brand-400 mt-1">{reportsSummary?.workingCount ?? 0}</div>
             </div>
 
             <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 glass-card">
               <span className="text-[10px] text-slate-400 font-bold uppercase">On Break</span>
-              <div className="text-2xl font-black text-amber-400 mt-1">{reportsSummary?.breakCount || 0}</div>
+              <div className="text-2xl font-black text-amber-400 mt-1">{reportsSummary?.breakCount ?? 0}</div>
             </div>
 
             <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 glass-card">
               <span className="text-[10px] text-slate-400 font-bold uppercase">Not Clocked In</span>
-              <div className="text-2xl font-black text-slate-400 mt-1">{reportsSummary?.notClockedInCount || 0}</div>
+              <div className="text-2xl font-black text-slate-400 mt-1">{reportsSummary?.notClockedInCount ?? 0}</div>
             </div>
 
             <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 glass-card">
               <span className="text-[10px] text-slate-400 font-bold uppercase">Completed Workday</span>
-              <div className="text-2xl font-black text-emerald-400 mt-1">{reportsSummary?.completedWorkdayCount || 0}</div>
+              <div className="text-2xl font-black text-emerald-400 mt-1">{reportsSummary?.completedWorkdayCount ?? 0}</div>
             </div>
           </div>
 
