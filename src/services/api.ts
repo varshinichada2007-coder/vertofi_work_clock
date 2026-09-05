@@ -735,32 +735,68 @@ export const api = {
         .select('*')
         .eq('date', todayStr);
 
-      if (!attError && remoteAttRecords && remoteAttRecords.length > 0) {
-        remoteAttRecords.forEach(r => {
-          const rec: AttendanceRecord = {
-            id: r.id,
-            userId: r.user_id,
-            date: r.date,
-            dayName: r.day_name,
-            clockIn: r.clock_in,
-            clockInTimestamp: Number(r.clock_in_timestamp),
-            clockOut: r.clock_out || undefined,
-            clockOutTimestamp: r.clock_out_timestamp ? Number(r.clock_out_timestamp) : undefined,
-            totalBreakSeconds: r.total_break_seconds || 0,
-            totalWorkSeconds: r.total_work_seconds || 0,
-            netWorkSeconds: r.net_work_seconds || 0,
-            status: r.status,
-            completionStatus: r.completion_status,
-            isLate: r.is_late,
-            lateMinutes: r.late_minutes,
-            initialTask: r.initial_task || 'No active task',
-            currentActivity: r.current_activity || r.initial_task || 'No active task',
-            endNotes: r.end_notes || undefined,
-            createdAt: r.created_at,
-            updatedAt: r.updated_at
-          };
-          storage.saveAttendanceRecord(rec);
-        });
+      if (!attError && remoteAttRecords) {
+        if (remoteAttRecords.length > 0) {
+          remoteAttRecords.forEach(r => {
+            const rec: AttendanceRecord = {
+              id: r.id,
+              userId: r.user_id,
+              date: r.date,
+              dayName: r.day_name,
+              clockIn: r.clock_in,
+              clockInTimestamp: Number(r.clock_in_timestamp),
+              clockOut: r.clock_out || undefined,
+              clockOutTimestamp: r.clock_out_timestamp ? Number(r.clock_out_timestamp) : undefined,
+              totalBreakSeconds: r.total_break_seconds || 0,
+              totalWorkSeconds: r.total_work_seconds || 0,
+              netWorkSeconds: r.net_work_seconds || 0,
+              status: r.status,
+              completionStatus: r.completion_status,
+              isLate: r.is_late,
+              lateMinutes: r.late_minutes,
+              initialTask: r.initial_task || 'No active task',
+              currentActivity: r.current_activity || r.initial_task || 'No active task',
+              endNotes: r.end_notes || undefined,
+              createdAt: r.created_at,
+              updatedAt: r.updated_at
+            };
+            storage.saveAttendanceRecord(rec);
+          });
+        }
+
+        // Auto-push local today records to Supabase if missing from remote
+        const localTodayRecords = attendanceRecords.filter(r => r.date === todayStr);
+        for (const localRec of localTodayRecords) {
+          const existsInRemote = remoteAttRecords.some(r => r.id === localRec.id || r.user_id === localRec.userId);
+          if (!existsInRemote) {
+            const matchedUser = employees.find(e => e.id === localRec.userId || e.employeeId === localRec.userId || e.email.toLowerCase() === localRec.userId.toLowerCase());
+            const targetUserId = matchedUser ? matchedUser.id : localRec.userId;
+
+            await supabase.from('attendance_records').upsert({
+              id: localRec.id,
+              user_id: targetUserId,
+              date: localRec.date,
+              day_name: localRec.dayName,
+              clock_in: localRec.clockIn,
+              clock_in_timestamp: localRec.clockInTimestamp,
+              clock_out: localRec.clockOut || null,
+              clock_out_timestamp: localRec.clockOutTimestamp || null,
+              total_break_seconds: localRec.totalBreakSeconds || 0,
+              total_work_seconds: localRec.totalWorkSeconds || 0,
+              net_work_seconds: localRec.netWorkSeconds || 0,
+              status: localRec.status,
+              completion_status: localRec.completionStatus || 'Working',
+              is_late: localRec.isLate || false,
+              late_minutes: localRec.lateMinutes || 0,
+              initial_task: localRec.initialTask || 'No active task',
+              current_activity: localRec.currentActivity || localRec.initialTask || 'No active task',
+              end_notes: localRec.endNotes || null,
+              created_at: localRec.createdAt || new Date().toISOString(),
+              updated_at: localRec.updatedAt || new Date().toISOString()
+            });
+          }
+        }
+
         attendanceRecords = storage.getAttendanceRecords();
       }
     } catch (e) {
@@ -769,7 +805,9 @@ export const api = {
 
     return employees.map(user => {
       const clockState = storage.getActiveClockState(user.id);
-      const attToday = attendanceRecords.find(r => r.userId === user.id && r.date === todayStr);
+      const attToday = attendanceRecords.find(r => 
+        r.date === todayStr && (r.userId === user.id || r.userId === user.employeeId || r.userId === user.email)
+      );
 
       let effectiveStatus: EmployeeStatus = clockState.status;
       let effectiveActivity = clockState.currentActivity;
