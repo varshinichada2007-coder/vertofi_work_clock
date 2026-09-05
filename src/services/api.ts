@@ -127,12 +127,13 @@ export const api = {
     }
 
     // Local Storage Fallback User Creation
+    // SECURITY: ALWAYS assigns EMPLOYEE role — ADMIN can only be created via initial setup
     const userId = `usr_${Date.now()}`;
     const autoEmpId = params.employeeId?.trim() || `EMP${String(users.length + 1).padStart(3, '0')}`;
     const profileImage = params.profileImage?.trim() || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(params.name)}&backgroundColor=0c8ee9,0270c7`;
 
-    const isFirstUser = users.length === 0;
-    const assignedRole: UserRole = params.role || (isFirstUser ? 'ADMIN' : 'EMPLOYEE');
+    // ALWAYS EMPLOYEE — never allow role escalation through the fallback path
+    const assignedRole: UserRole = 'EMPLOYEE';
 
     const newUser: User = {
       id: userId,
