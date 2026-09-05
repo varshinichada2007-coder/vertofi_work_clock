@@ -11,7 +11,7 @@ interface AuthContextType {
   login: (email: string, password?: string) => Promise<void>;
   addEmployee: (params: AddEmployeeParams) => Promise<User>;
   deleteEmployee: (userId: string) => Promise<void>;
-  updateProfile: (updates: { name?: string; phone?: string; workLocation?: string }) => Promise<User>;
+  updateProfile: (updates: { name?: string; phone?: string; workLocation?: string; designation?: string }) => Promise<User>;
   logout: () => Promise<void>;
   isLoading: boolean;
   refreshUsers: () => Promise<User[]>;
@@ -169,7 +169,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const updateProfile = async (updates: { name?: string; phone?: string; workLocation?: string }): Promise<User> => {
+  const updateProfile = async (updates: { name?: string; phone?: string; workLocation?: string; designation?: string }): Promise<User> => {
     if (!user) throw new Error('No authenticated user.');
     const updatedUser = await api.updateProfile(user.id, updates);
     // Update the avatar URL if name changed (initials-based avatar)

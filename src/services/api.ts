@@ -156,14 +156,15 @@ export const api = {
     return newUser;
   },
 
-  // Update own profile (name, phone, workLocation) in Supabase
-  async updateProfile(userId: string, updates: { name?: string; phone?: string; workLocation?: string }): Promise<User> {
+  // Update own profile (name, phone, workLocation, designation) in Supabase
+  async updateProfile(userId: string, updates: { name?: string; phone?: string; workLocation?: string; designation?: string }): Promise<User> {
     const payload: Record<string, any> = {
       updated_at: new Date().toISOString()
     };
     if (updates.name !== undefined) payload.name = updates.name.trim();
     if (updates.phone !== undefined) payload.phone = updates.phone.trim();
     if (updates.workLocation !== undefined) payload.work_location = updates.workLocation.trim();
+    if (updates.designation !== undefined) payload.designation = updates.designation.trim();
 
     const { data, error } = await supabase
       .from('profiles')

@@ -8,13 +8,15 @@ export const ProfilePage: React.FC = () => {
   const [name, setName] = useState(user?.name || '');
   const [phone, setPhone] = useState(user?.phone || '');
   const [location, setLocation] = useState(user?.workLocation || '');
+  const [designation, setDesignation] = useState(user?.designation || '');
 
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Reflect live changes in the banner while the user types
+  // Reflect live name in the banner while the user types
   const displayName = name.trim() || user?.name || '';
+  const displayDesignation = designation.trim() || user?.designation || '';
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -34,7 +36,8 @@ export const ProfilePage: React.FC = () => {
       await updateProfile({
         name: trimmedName,
         phone: phone.trim(),
-        workLocation: location.trim()
+        workLocation: location.trim(),
+        designation: designation.trim()
       });
       setSaved(true);
       setTimeout(() => setSaved(false), 4000);
@@ -61,7 +64,9 @@ export const ProfilePage: React.FC = () => {
               {user?.employeeId}
             </span>
           </div>
-          <p className="text-sm font-semibold text-brand-400 mt-1">{user?.designation} • {user?.department}</p>
+          <p className="text-sm font-semibold text-brand-400 mt-1">
+            {displayDesignation} • {user?.department}
+          </p>
           <p className="text-xs text-slate-400 mt-1">
             {phone.trim() || user?.phone || '—'}
           </p>
@@ -78,7 +83,7 @@ export const ProfilePage: React.FC = () => {
         {saved && (
           <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-semibold flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4 shrink-0" />
-            Profile saved successfully! Your name and phone number are now updated everywhere.
+            Profile saved successfully! Your changes are now updated everywhere.
           </div>
         )}
 
@@ -91,6 +96,7 @@ export const ProfilePage: React.FC = () => {
         )}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+
           {/* Full Name — editable */}
           <div>
             <label className="block text-xs font-bold text-slate-300 uppercase mb-2">Full Name</label>
@@ -137,6 +143,18 @@ export const ProfilePage: React.FC = () => {
             />
           </div>
 
+          {/* Designation — editable */}
+          <div>
+            <label className="block text-xs font-bold text-slate-300 uppercase mb-2">Designation</label>
+            <input
+              type="text"
+              value={designation}
+              onChange={(e) => setDesignation(e.target.value)}
+              placeholder="e.g. Software Engineer, Designer"
+              className="w-full px-4 py-3 rounded-2xl bg-slate-800 border border-slate-700 text-white text-xs focus:outline-none focus:border-brand-500 transition-colors"
+            />
+          </div>
+
           {/* Department — read-only */}
           <div>
             <label className="block text-xs font-bold text-slate-300 uppercase mb-2">Department</label>
@@ -149,7 +167,7 @@ export const ProfilePage: React.FC = () => {
           </div>
 
           {/* Work Location — editable */}
-          <div>
+          <div className="sm:col-span-2">
             <label className="block text-xs font-bold text-slate-300 uppercase mb-2">Work Location</label>
             <input
               type="text"
@@ -159,6 +177,7 @@ export const ProfilePage: React.FC = () => {
               className="w-full px-4 py-3 rounded-2xl bg-slate-800 border border-slate-700 text-white text-xs focus:outline-none focus:border-brand-500 transition-colors"
             />
           </div>
+
         </div>
 
         <div className="flex justify-end pt-4 border-t border-slate-800">
