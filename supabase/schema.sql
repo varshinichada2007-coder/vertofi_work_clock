@@ -4,7 +4,7 @@
 
 -- 1. Create Profiles Table (Stores Employees and Admins)
 CREATE TABLE IF NOT EXISTS public.profiles (
-  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   email TEXT UNIQUE NOT NULL,
   employee_id TEXT UNIQUE NOT NULL,
@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
 -- 2. Create Attendance Records Table
 CREATE TABLE IF NOT EXISTS public.attendance_records (
   id TEXT PRIMARY KEY,
-  user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL,
   date DATE NOT NULL DEFAULT CURRENT_DATE,
   day_name TEXT NOT NULL,
   clock_in TEXT NOT NULL,
@@ -34,8 +34,8 @@ CREATE TABLE IF NOT EXISTS public.attendance_records (
   total_break_seconds INTEGER DEFAULT 0,
   total_work_seconds INTEGER DEFAULT 0,
   net_work_seconds INTEGER DEFAULT 0,
-  status TEXT NOT NULL CHECK (status IN ('Present', 'Late', 'Half Day', 'Absent', 'On Leave')) DEFAULT 'Present',
-  completion_status TEXT CHECK (completion_status IN ('Working', '8 Hour Work Completed', 'Workday Incomplete')) DEFAULT 'Working',
+  status TEXT NOT NULL DEFAULT 'Present',
+  completion_status TEXT DEFAULT 'Working',
   is_late BOOLEAN DEFAULT FALSE,
   late_minutes INTEGER DEFAULT 0,
   initial_task TEXT,
@@ -48,8 +48,8 @@ CREATE TABLE IF NOT EXISTS public.attendance_records (
 -- 3. Create Break Records Table
 CREATE TABLE IF NOT EXISTS public.break_records (
   id TEXT PRIMARY KEY,
-  attendance_id TEXT NOT NULL REFERENCES public.attendance_records(id) ON DELETE CASCADE,
-  user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  attendance_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
   break_type TEXT NOT NULL,
   start_time TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   end_time TIMESTAMPTZ,
@@ -61,31 +61,31 @@ CREATE TABLE IF NOT EXISTS public.break_records (
 -- 4. Create Work Sessions Table
 CREATE TABLE IF NOT EXISTS public.work_sessions (
   id TEXT PRIMARY KEY,
-  attendance_id TEXT NOT NULL REFERENCES public.attendance_records(id) ON DELETE CASCADE,
-  user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  attendance_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
   start_time TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   end_time TIMESTAMPTZ,
   duration_seconds INTEGER DEFAULT 0,
   activity TEXT NOT NULL,
-  status TEXT NOT NULL CHECK (status IN ('Working', 'Completed', 'Paused')) DEFAULT 'Working',
+  status TEXT NOT NULL DEFAULT 'Working',
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- 5. Create Activity Records Table
 CREATE TABLE IF NOT EXISTS public.activity_records (
   id TEXT PRIMARY KEY,
-  user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
-  attendance_id TEXT NOT NULL REFERENCES public.attendance_records(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL,
+  attendance_id TEXT NOT NULL,
   activity TEXT NOT NULL,
   started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   duration_seconds INTEGER DEFAULT 0,
-  status TEXT NOT NULL CHECK (status IN ('Working', 'Completed', 'Paused')) DEFAULT 'Working',
+  status TEXT NOT NULL DEFAULT 'Working',
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- 6. Create User Settings Table
 CREATE TABLE IF NOT EXISTS public.user_settings (
-  user_id UUID PRIMARY KEY REFERENCES public.profiles(id) ON DELETE CASCADE,
+  user_id TEXT PRIMARY KEY,
   clock_in_reminder BOOLEAN DEFAULT TRUE,
   clock_in_time TEXT DEFAULT '09:00',
   clock_out_reminder BOOLEAN DEFAULT TRUE,
@@ -108,16 +108,24 @@ ALTER TABLE public.work_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.activity_records ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.user_settings ENABLE ROW LEVEL SECURITY;
 
--- Create RLS Policies to Allow Full Access for Authenticated Users
-CREATE POLICY "Allow public select for authenticated users" ON public.profiles FOR SELECT USING (auth.role() = 'authenticated');
-CREATE POLICY "Allow users to update own profile" ON public.profiles FOR UPDATE USING (auth.uid() = id);
-CREATE POLICY "Allow insert profiles" ON public.profiles FOR INSERT WITH CHECK (true);
+-- Create Open RLS Policies for Cloud Access across all devices
+DROP POLICY IF EXISTS "Profiles open access" ON public.profiles;
+CREATE POLICY "Profiles open access" ON public.profiles FOR ALL USING (true) WITH CHECK (true);
 
-CREATE POLICY "Attendance records full access" ON public.attendance_records FOR ALL USING (auth.role() = 'authenticated');
-CREATE POLICY "Break records full access" ON public.break_records FOR ALL USING (auth.role() = 'authenticated');
-CREATE POLICY "Work sessions full access" ON public.work_sessions FOR ALL USING (auth.role() = 'authenticated');
-CREATE POLICY "Activity records full access" ON public.activity_records FOR ALL USING (auth.role() = 'authenticated');
-CREATE POLICY "User settings full access" ON public.user_settings FOR ALL USING (auth.role() = 'authenticated');
+DROP POLICY IF EXISTS "Attendance open access" ON public.attendance_records;
+CREATE POLICY "Attendance open access" ON public.attendance_records FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Breaks open access" ON public.break_records;
+CREATE POLICY "Breaks open access" ON public.break_records FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Sessions open access" ON public.work_sessions;
+CREATE POLICY "Sessions open access" ON public.work_sessions FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Activities open access" ON public.activity_records;
+CREATE POLICY "Activities open access" ON public.activity_records FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Settings open access" ON public.user_settings;
+CREATE POLICY "Settings open access" ON public.user_settings FOR ALL USING (true) WITH CHECK (true);
 
 -- Automatic Profile Creation Trigger when a User Signs Up
 CREATE OR REPLACE FUNCTION public.handle_new_user()
