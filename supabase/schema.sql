@@ -2,6 +2,13 @@
 -- VERTOFI WORKCLOCK - COMPLETE SUPABASE DATABASE SCHEMA
 -- ========================================================
 
+-- Force recreation of tables to ensure all columns match
+DROP TABLE IF EXISTS public.break_records CASCADE;
+DROP TABLE IF EXISTS public.work_sessions CASCADE;
+DROP TABLE IF EXISTS public.activity_records CASCADE;
+DROP TABLE IF EXISTS public.attendance_records CASCADE;
+DROP TABLE IF EXISTS public.user_settings CASCADE;
+
 -- 1. Create Profiles Table (Stores Employees and Admins)
 CREATE TABLE IF NOT EXISTS public.profiles (
   id TEXT PRIMARY KEY,
@@ -22,7 +29,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
 );
 
 -- 2. Create Attendance Records Table
-CREATE TABLE IF NOT EXISTS public.attendance_records (
+CREATE TABLE public.attendance_records (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,
   date DATE NOT NULL DEFAULT CURRENT_DATE,
