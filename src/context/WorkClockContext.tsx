@@ -106,12 +106,33 @@ export const WorkClockProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [isEditTaskModalOpen, setIsEditTaskModalOpen] = useState(false);
   const [isAddEmployeeModalOpen, setIsAddEmployeeModalOpen] = useState(false);
 
-  // Sync clock state when active user changes
+  // Sync clock state from cloud database when active user changes or periodically
   useEffect(() => {
-    if (user?.id) {
-      setClockState(storage.getActiveClockState(user.id));
-      setTimelineEvents(storage.getTimelineEvents(user.id));
-    }
+    if (!user?.id) return;
+
+    let isMounted = true;
+    const syncUserClockState = async () => {
+      try {
+        const { activeClockState } = await api.getTodayAttendance(user.id);
+        if (isMounted && activeClockState) {
+          setClockState(activeClockState);
+          setTimelineEvents(storage.getTimelineEvents(user.id));
+        }
+      } catch (e) {
+        if (isMounted) {
+          setClockState(storage.getActiveClockState(user.id));
+          setTimelineEvents(storage.getTimelineEvents(user.id));
+        }
+      }
+    };
+
+    syncUserClockState();
+    const interval = setInterval(syncUserClockState, 5000);
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
   }, [user?.id]);
 
   // Master 1-second interval timer
