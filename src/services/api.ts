@@ -813,8 +813,9 @@ export const api = {
     const targetOrg = orgId || user?.organizationId || storage.getCurrentOrgId();
     try {
       const remote = await supabaseDb.getAttendanceRecords(targetOrg);
-      if (remote && remote.length > 0) {
+      if (remote !== null) {
         storage.setAttendanceRecords(remote);
+        return remote.filter(r => r.userId === userId).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
       }
     } catch (e) {
       console.warn('Supabase getAttendanceHistory fallback:', e);
@@ -827,8 +828,9 @@ export const api = {
     const targetOrg = orgId || storage.getCurrentOrgId();
     try {
       const remote = await supabaseDb.getAttendanceRecords(targetOrg);
-      if (remote && remote.length > 0) {
+      if (remote !== null) {
         storage.setAttendanceRecords(remote);
+        return remote.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
       }
     } catch (e) {
       console.warn('Supabase getAllAttendanceRecords fallback:', e);
@@ -957,8 +959,9 @@ export const api = {
     const targetOrg = orgId || storage.getCurrentOrgId();
     try {
       const remote = await supabaseDb.getLeaveRequests(targetOrg);
-      if (remote && remote.length > 0) {
+      if (remote !== null) {
         storage.setLeaveRequests(remote);
+        return userId ? remote.filter(r => r.userId === userId) : remote;
       }
     } catch (e) {
       console.warn('Supabase getLeaveRequests fallback:', e);
@@ -1107,8 +1110,9 @@ export const api = {
     const targetOrg = orgId || storage.getCurrentOrgId();
     try {
       const remote = await supabaseDb.getCorrectionRequests(targetOrg);
-      if (remote && remote.length > 0) {
+      if (remote !== null) {
         storage.setCorrectionRequests(remote);
+        return userId ? remote.filter(r => r.userId === userId) : remote;
       }
     } catch (e) {
       console.warn('Supabase getCorrectionRequests fallback:', e);
@@ -1285,8 +1289,9 @@ export const api = {
     const targetOrg = orgId || storage.getCurrentOrgId();
     try {
       const remote = await supabaseDb.getAuditLogs(targetOrg);
-      if (remote && remote.length > 0) {
+      if (remote !== null) {
         storage.setAuditLogs(remote);
+        return remote;
       }
     } catch (e) {
       console.warn('Supabase getAuditLogs fallback:', e);
@@ -1456,10 +1461,10 @@ export const api = {
       });
 
       const mPresent = mRecords.filter(r => r.status === 'PRESENT' || r.status === 'COMPLETED' || r.status === 'LATE').length;
-      const mPct = totalEmployees > 0 && mRecords.length > 0 ? Math.min(100, Math.round((mPresent / (totalEmployees * 20)) * 100)) : 88 + (i * 2);
+      const mPct = totalEmployees > 0 && mRecords.length > 0 ? Math.min(100, Math.round((mPresent / (totalEmployees * 20)) * 100)) : 0;
       const mAvgHours = mRecords.length > 0
         ? Math.round((mRecords.reduce((acc, r) => acc + (r.netWorkSeconds || 0), 0) / mRecords.length / 3600) * 10) / 10
-        : 8.1;
+        : 0;
 
       monthlyTrendData.push({
         month: `${mName} ${mYear}`,
@@ -1571,8 +1576,11 @@ export const api = {
     const targetOrg = orgId || storage.getCurrentOrgId();
     try {
       const remote = await supabaseDb.getAssignedTasks(targetOrg);
-      if (remote && remote.length > 0) {
+      if (remote !== null) {
         storage.setAssignedTasks(remote);
+        return remote
+          .filter(t => t.assignedToUserId === userId)
+          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
       }
     } catch (e) {
       console.warn('Supabase getTasksForUser fallback:', e);
@@ -1587,8 +1595,9 @@ export const api = {
     const targetOrg = orgId || storage.getCurrentOrgId();
     try {
       const remote = await supabaseDb.getAssignedTasks(targetOrg);
-      if (remote && remote.length > 0) {
+      if (remote !== null) {
         storage.setAssignedTasks(remote);
+        return remote.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
       }
     } catch (e) {
       console.warn('Supabase getAllAssignedTasks fallback:', e);

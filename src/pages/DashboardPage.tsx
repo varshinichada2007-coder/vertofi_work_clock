@@ -68,18 +68,20 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
   const fetchAdminData = async (showFeedback = false) => {
     if (showFeedback) setIsRefreshing(true);
     try {
-      const [team, reports, leaves, corrections, tasks] = await Promise.all([
+      const [team, reports, leaves, corrections, tasks, allAttendance] = await Promise.all([
         api.getTeamAttendance(organization?.id),
         api.getReportsSummary(organization?.id),
         api.getLeaveRequests(organization?.id),
         api.getCorrectionRequests(organization?.id),
-        api.getAllAssignedTasks(organization?.id)
+        api.getAllAssignedTasks(organization?.id),
+        api.getAllAttendanceRecords(organization?.id)
       ]);
       setTeamMembers(team);
       setReportsData(reports);
       setPendingLeaves(leaves.filter(l => l.status === 'Pending'));
       setPendingCorrections(corrections.filter(c => c.status === 'Pending'));
       setAdminAssignedTasks(tasks);
+      setEmployeeAttendanceHistory(allAttendance || []);
       if (showFeedback) {
         addToast(
           'Dashboard Refreshed',
@@ -436,36 +438,91 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
     const onBreakNow = teamMembers.filter(m => m.currentStatus === 'ON_BREAK').length;
     const clockedOutToday = teamMembers.filter(m => m.currentStatus === 'CLOCKED_OUT').length;
     const presentToday = workingNow + onBreakNow + clockedOutToday;
-    const absentToday = teamMembers.filter(m => m.attendanceToday?.status === 'ABSENT' || (!m.attendanceToday && m.currentStatus === 'NOT_CLOCKED_IN')).length;
-    const lateToday = teamMembers.filter(m => m.attendanceToday?.isLate).length;
+    const absentToday = teamMembers.filter(m => m.attendanceToday?.status === 'ABSENT').length;
+    const lateToday = teamMembers.filter(m => m.attendanceToday?.isLate || m.attendanceToday?.status === 'LATE').length;
     const onLeaveToday = teamMembers.filter(m => m.attendanceToday?.status === 'LEAVE').length;
+    const notClockedInToday = teamMembers.filter(m => m.currentStatus === 'NOT_CLOCKED_IN').length;
     const attendancePct = totalEmployees > 0 ? Math.round((presentToday / totalEmployees) * 100) : 0;
 
-    // Weekly live work hours data
-    const weeklyWorkData = (reportsData?.dailyWorkData && reportsData.dailyWorkData.length > 0)
-      ? reportsData.dailyWorkData.map((d: any) => ({
-          day: d.day,
-          avgWorkHours: d.workHours || 8.1,
+    // 5-day current work week (Monday to Friday) calculation directly from real Supabase records
+    const now = new Date();
+    const dayOfWeek = now.getDay(); // 0: Sun, 1: Mon, ... 6: Sat
+    const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    const monday = new Date(now);
+    monday.setDate(now.getDate() + mondayOffset);
+
+    const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+    const fullLabels = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+    const todayYMD = now.toISOString().split('T')[0];
+
+    // Weekly live work hours data computed purely from real database attendance records
+    const weeklyWorkData = dayLabels.map((abbr, idx) => {
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + idx);
+      const dateStr = d.toISOString().split('T')[0];
+      const isToday = dateStr === todayYMD;
+
+      if (isToday) {
+        const todayLoggedHours = presentToday > 0 ? Math.round((teamMembers.reduce((acc, m) => acc + m.totalWorkSecondsToday, 0) / presentToday / 3600) * 10) / 10 : 0;
+        return {
+          day: `${abbr} (Today)`,
+          fullDay: fullLabels[idx],
+          date: dateStr,
+          avgWorkHours: todayLoggedHours,
           targetHours: 8.0
-        }))
-      : [
-          { day: 'Mon', avgWorkHours: 8.2, targetHours: 8.0 },
-          { day: 'Tue', avgWorkHours: 8.0, targetHours: 8.0 },
-          { day: 'Wed', avgWorkHours: 7.8, targetHours: 8.0 },
-          { day: 'Thu', avgWorkHours: 8.4, targetHours: 8.0 },
-          { day: 'Fri (Today)', avgWorkHours: 8.1, targetHours: 8.0 }
-        ];
+        };
+      }
 
-    // Weekly attendance distribution & live breakdown
-    const attendanceBreakdownData = [
-      { day: 'Mon', Present: totalEmployees, Late: 0, Absent: 0, Leave: 0 },
-      { day: 'Tue', Present: totalEmployees, Late: 0, Absent: 0, Leave: 0 },
-      { day: 'Wed', Present: Math.max(0, totalEmployees - 1), Late: 1, Absent: 0, Leave: 0 },
-      { day: 'Thu', Present: totalEmployees, Late: 0, Absent: 0, Leave: 0 },
-      { day: 'Fri (Today)', Present: presentToday, Late: lateToday, Absent: absentToday, Leave: onLeaveToday }
-    ];
+      const dayRecords = (employeeAttendanceHistory || []).filter(r => r.date === dateStr);
+      const totalSec = dayRecords.reduce((acc, r) => acc + (r.netWorkSeconds || 0), 0);
+      const activeCount = dayRecords.filter(r => (r.netWorkSeconds || 0) > 0).length;
+      const avgWorkHours = activeCount > 0 ? Math.round((totalSec / activeCount / 3600) * 10) / 10 : 0;
 
-    const weeklyAvgHours = Math.round((weeklyWorkData.reduce((acc: number, d: any) => acc + d.avgWorkHours, 0) / Math.max(1, weeklyWorkData.length)) * 10) / 10;
+      return {
+        day: abbr,
+        fullDay: fullLabels[idx],
+        date: dateStr,
+        avgWorkHours,
+        targetHours: 8.0
+      };
+    });
+
+    // Weekly attendance distribution computed strictly from real Supabase records
+    const attendanceBreakdownData = dayLabels.map((abbr, idx) => {
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + idx);
+      const dateStr = d.toISOString().split('T')[0];
+      const isToday = dateStr === todayYMD;
+
+      if (isToday) {
+        return {
+          day: `${abbr} (Today)`,
+          Present: presentToday,
+          Late: lateToday,
+          Absent: absentToday,
+          Leave: onLeaveToday
+        };
+      }
+
+      const dayRecords = (employeeAttendanceHistory || []).filter(r => r.date === dateStr);
+      const presentCount = dayRecords.filter(r => r.status === 'PRESENT' || r.status === 'WORKING' || r.status === 'ON_BREAK' || r.status === 'COMPLETED').length;
+      const lateCount = dayRecords.filter(r => r.isLate || r.status === 'LATE').length;
+      const leaveCount = dayRecords.filter(r => r.status === 'LEAVE').length;
+      const absentCount = dayRecords.filter(r => r.status === 'ABSENT').length;
+
+      return {
+        day: abbr,
+        Present: presentCount,
+        Late: lateCount,
+        Absent: absentCount,
+        Leave: leaveCount
+      };
+    });
+
+    const activeDaysWithData = weeklyWorkData.filter((d: any) => d.avgWorkHours > 0);
+    const weeklyAvgHours = activeDaysWithData.length > 0
+      ? Math.round((activeDaysWithData.reduce((acc: number, d: any) => acc + d.avgWorkHours, 0) / activeDaysWithData.length) * 10) / 10
+      : 0;
 
     const filteredMembers = teamMembers.filter(m => {
       const matchSearch = m.user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
