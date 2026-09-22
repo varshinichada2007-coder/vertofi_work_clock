@@ -26,8 +26,8 @@ export const ReportsPage: React.FC = () => {
   const [selectedDate, setSelectedDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>('ALL');
   const [selectedDepartment, setSelectedDepartment] = useState<string>('ALL');
-  const [selectedMonth, setSelectedMonth] = useState<number>(8); // September (0-indexed)
-  const [selectedYear, setSelectedYear] = useState<number>(2026);
+  const [selectedMonth, setSelectedMonth] = useState<number>(() => new Date().getMonth());
+  const [selectedYear, setSelectedYear] = useState<number>(() => new Date().getFullYear());
 
   const monthNames = [
     'January', 'February', 'March', 'April', 'May', 'June',

@@ -10,8 +10,8 @@ import { EmployeeDetailModal } from '../components/modals/EmployeeDetailModal';
 
 export const AdminTimesheetsPage: React.FC = () => {
   const { organization } = useAuth();
-  const [currentYear, setCurrentYear] = useState(2026);
-  const [currentMonthIndex, setCurrentMonthIndex] = useState(8); // 8 = September (0-indexed)
+  const [currentYear, setCurrentYear] = useState(() => new Date().getFullYear());
+  const [currentMonthIndex, setCurrentMonthIndex] = useState(() => new Date().getMonth());
   const [summaryData, setSummaryData] = useState<any>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedEmployeeSummary, setSelectedEmployeeSummary] = useState<any>(null);

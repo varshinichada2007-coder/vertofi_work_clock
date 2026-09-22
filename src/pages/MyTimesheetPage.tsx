@@ -10,8 +10,8 @@ import { AttendanceRecord } from '../types';
 
 export const MyTimesheetPage: React.FC = () => {
   const { user, organization } = useAuth();
-  const [currentYear, setCurrentYear] = useState(2026);
-  const [currentMonthIndex, setCurrentMonthIndex] = useState(8); // 8 = September
+  const [currentYear, setCurrentYear] = useState(() => new Date().getFullYear());
+  const [currentMonthIndex, setCurrentMonthIndex] = useState(() => new Date().getMonth());
   const [monthRecords, setMonthRecords] = useState<AttendanceRecord[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(true);

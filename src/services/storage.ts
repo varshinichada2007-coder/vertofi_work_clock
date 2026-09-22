@@ -12,24 +12,24 @@ import {
 } from './mockData';
 
 const STORAGE_KEYS = {
-  ORGANIZATIONS: 'vertofi_organizations_v7',
-  CURRENT_ORG_ID: 'vertofi_current_org_id_v7',
-  USERS: 'vertofi_users_v7',
-  CURRENT_USER_ID: 'vertofi_current_user_id_v7',
-  ATTENDANCE: 'vertofi_attendance_v7',
-  BREAKS: 'vertofi_breaks_v7',
-  SESSIONS: 'vertofi_sessions_v7',
-  ACTIVITIES: 'vertofi_activities_v7',
-  LEAVE_REQUESTS: 'vertofi_leaves_v7',
-  CORRECTIONS: 'vertofi_corrections_v7',
-  AUDIT_LOGS: 'vertofi_audit_logs_v7',
-  NOTIFICATIONS: 'vertofi_notifications_v7',
-  SCHEDULES: 'vertofi_schedules_v7',
-  SETTINGS: 'vertofi_settings_v7',
-  ASSIGNED_TASKS: 'vertofi_assigned_tasks_v7',
-  ACTIVE_CLOCK_PREFIX: 'vertofi_active_clock_v7_',
-  TIMELINE_PREFIX: 'vertofi_timeline_v7_',
-  SEED_FLAG: 'vertofi_seeded_v7'
+  ORGANIZATIONS: 'vertofi_organizations_v8',
+  CURRENT_ORG_ID: 'vertofi_current_org_id_v8',
+  USERS: 'vertofi_users_v8',
+  CURRENT_USER_ID: 'vertofi_current_user_id_v8',
+  ATTENDANCE: 'vertofi_attendance_v8',
+  BREAKS: 'vertofi_breaks_v8',
+  SESSIONS: 'vertofi_sessions_v8',
+  ACTIVITIES: 'vertofi_activities_v8',
+  LEAVE_REQUESTS: 'vertofi_leaves_v8',
+  CORRECTIONS: 'vertofi_corrections_v8',
+  AUDIT_LOGS: 'vertofi_audit_logs_v8',
+  NOTIFICATIONS: 'vertofi_notifications_v8',
+  SCHEDULES: 'vertofi_schedules_v8',
+  SETTINGS: 'vertofi_settings_v8',
+  ASSIGNED_TASKS: 'vertofi_assigned_tasks_v8',
+  ACTIVE_CLOCK_PREFIX: 'vertofi_active_clock_v8_',
+  TIMELINE_PREFIX: 'vertofi_timeline_v8_',
+  SEED_FLAG: 'vertofi_seeded_v8'
 };
 
 export interface ActiveClockState {
@@ -51,6 +51,20 @@ class StorageService {
   }
 
   private initStorage() {
+    // Clean up all legacy mock data keys from older storage versions (v1 to v7)
+    try {
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && (key.startsWith('vertofi_') && !key.includes('_v8'))) {
+          keysToRemove.push(key);
+        }
+      }
+      keysToRemove.forEach(k => localStorage.removeItem(k));
+    } catch (e) {
+      console.warn('Legacy storage cleanup warning:', e);
+    }
+
     const isSeeded = localStorage.getItem(STORAGE_KEYS.SEED_FLAG);
     if (!isSeeded) {
       try {
@@ -58,44 +72,17 @@ class StorageService {
         localStorage.setItem(STORAGE_KEYS.CURRENT_ORG_ID, 'org_vertofi');
         localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(INITIAL_USERS));
         localStorage.setItem(STORAGE_KEYS.CURRENT_USER_ID, 'f45bd396-988c-4f4a-8c85-f203722a1d41');
-        localStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify(generateSeedAttendance()));
+        localStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify([]));
         localStorage.setItem(STORAGE_KEYS.BREAKS, JSON.stringify([]));
         localStorage.setItem(STORAGE_KEYS.SESSIONS, JSON.stringify([]));
         localStorage.setItem(STORAGE_KEYS.ACTIVITIES, JSON.stringify([]));
-        localStorage.setItem(STORAGE_KEYS.LEAVE_REQUESTS, JSON.stringify(INITIAL_LEAVE_REQUESTS));
-        localStorage.setItem(STORAGE_KEYS.CORRECTIONS, JSON.stringify(INITIAL_CORRECTION_REQUESTS));
-        localStorage.setItem(STORAGE_KEYS.AUDIT_LOGS, JSON.stringify(INITIAL_AUDIT_LOGS));
-        localStorage.setItem(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify(INITIAL_NOTIFICATIONS));
+        localStorage.setItem(STORAGE_KEYS.LEAVE_REQUESTS, JSON.stringify([]));
+        localStorage.setItem(STORAGE_KEYS.CORRECTIONS, JSON.stringify([]));
+        localStorage.setItem(STORAGE_KEYS.AUDIT_LOGS, JSON.stringify([]));
+        localStorage.setItem(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify([]));
         localStorage.setItem(STORAGE_KEYS.SCHEDULES, JSON.stringify([DEFAULT_WORK_SCHEDULE]));
         localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(DEFAULT_SETTINGS));
-        localStorage.setItem(STORAGE_KEYS.ASSIGNED_TASKS, JSON.stringify(INITIAL_ASSIGNED_TASKS));
-
-        // Seed initial clock state for Geethika (Working) and Varshini (On Break)
-        this.setActiveClockState('3f72f92d-f0c5-48ce-8e02-b0bc83ec3ba7', {
-          status: 'WORKING',
-          clockInTimestamp: new Date('2026-09-15T09:02:14').getTime(),
-          clockOutTimestamp: null,
-          accumulatedBreakSeconds: 1800,
-          currentBreakStartTimestamp: null,
-          currentBreakType: null,
-          currentActivity: 'Frontend portal updates',
-          initialTask: 'Frontend Intern daily tasks',
-          attendanceId: 'att_2026-09-15_3f72f92d-f0c5-48ce-8e02-b0bc83ec3ba7',
-          todayDateStr: '2026-09-15'
-        });
-
-        this.setActiveClockState('22b17343-5a98-4791-a81a-bef302715d09', {
-          status: 'ON_BREAK',
-          clockInTimestamp: new Date('2026-09-15T08:55:00').getTime(),
-          clockOutTimestamp: null,
-          accumulatedBreakSeconds: 900,
-          currentBreakStartTimestamp: Date.now() - 600000,
-          currentBreakType: 'Tea/Coffee',
-          currentActivity: 'Taking Tea/Coffee break',
-          initialTask: 'Frontend Intern daily tasks',
-          attendanceId: 'att_2026-09-15_22b17343-5a98-4791-a81a-bef302715d09',
-          todayDateStr: '2026-09-15'
-        });
+        localStorage.setItem(STORAGE_KEYS.ASSIGNED_TASKS, JSON.stringify([]));
 
         localStorage.setItem(STORAGE_KEYS.SEED_FLAG, 'true');
       } catch (e) {
