@@ -18,6 +18,13 @@ interface WorkClockContextType {
   timelineEvents: TimelineEvent[];
   toasts: ToastMessage[];
 
+  // Inactivity & Screen-Off Monitor State
+  isInactivityModalOpen: boolean;
+  inactivitySecondsLeft: number;
+  maxWarningSeconds: number;
+  resetInactivityTimer: () => void;
+  isMonitoringActive: boolean;
+
   // Actions
   clockIn: (initialTask: string) => Promise<void>;
   startBreak: (breakType: BreakType, notes?: string) => Promise<void>;
@@ -48,7 +55,7 @@ const WorkClockContext = createContext<WorkClockContextType | undefined>(undefin
 
 export const WorkClockProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useAuth();
-  const userId = user?.id || 'usr_admin';
+  const userId = user?.id || 'f45bd396-988c-4f4a-8c85-f203722a1d41';
 
   const [now, setNow] = useState<Date>(new Date());
   const [clockState, setClockState] = useState<ActiveClockState>(() => {
@@ -94,7 +101,12 @@ export const WorkClockProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         activityIntervalMinutes: 120,
         use24HourClock: false,
         timezone: 'Asia/Kolkata',
-        emailNotifications: true
+        emailNotifications: true,
+        autoClockOutOnIdle: true,
+        idleTimeoutMinutes: 5,
+        autoClockOutOnScreenOff: true,
+        screenOffGraceSeconds: 10,
+        idleWarningSeconds: 30
       };
     }
   });
@@ -105,6 +117,19 @@ export const WorkClockProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [isClockOutModalOpen, setIsClockOutModalOpen] = useState(false);
   const [isEditTaskModalOpen, setIsEditTaskModalOpen] = useState(false);
   const [isAddEmployeeModalOpen, setIsAddEmployeeModalOpen] = useState(false);
+
+  // Inactivity & Screen-Off Live Monitoring
+  const [isInactivityModalOpen, setIsInactivityModalOpen] = useState(false);
+  const [inactivitySecondsLeft, setInactivitySecondsLeft] = useState<number>(settings.idleWarningSeconds || 30);
+  const lastActivityRef = React.useRef<number>(Date.now());
+  const screenOffTimeoutRef = React.useRef<any>(null);
+  const autoClockOutTriggeredRef = React.useRef<boolean>(false);
+
+  const resetInactivityTimer = useCallback(() => {
+    lastActivityRef.current = Date.now();
+    autoClockOutTriggeredRef.current = false;
+    setIsInactivityModalOpen(false);
+  }, []);
 
   // Sync clock state from cloud database when active user changes or periodically
   useEffect(() => {
@@ -135,13 +160,118 @@ export const WorkClockProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     };
   }, [user?.id]);
 
-  // Master 1-second interval timer
+  // Master Activity Tracker: Mouse movement, clicks, keystrokes, touch, scrolling
+  useEffect(() => {
+    const handleUserActivity = () => {
+      lastActivityRef.current = Date.now();
+    };
+
+    const events = ['mousemove', 'mousedown', 'click', 'keydown', 'touchstart', 'touchmove', 'scroll', 'wheel', 'pointermove'];
+    events.forEach(evt => window.addEventListener(evt, handleUserActivity, { passive: true }));
+
+    return () => {
+      events.forEach(evt => window.removeEventListener(evt, handleUserActivity));
+    };
+  }, []);
+
+  // Screen-Off & Tab Hidden / Sleep / Lock Detection
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        // Screen is turned off, tab is hidden, or display locked
+        if (settings.autoClockOutOnScreenOff !== false && clockState.status === 'WORKING') {
+          const graceMs = Math.max(2000, (settings.screenOffGraceSeconds || 10) * 1000);
+          if (screenOffTimeoutRef.current) clearTimeout(screenOffTimeoutRef.current);
+
+          screenOffTimeoutRef.current = setTimeout(async () => {
+            if (document.visibilityState === 'hidden' && clockState.status === 'WORKING') {
+              try {
+                const res = await api.clockOut(userId, 'Auto Clocked Out: Screen turned off / Device locked');
+                setClockState(res.state);
+                setTimelineEvents(storage.getTimelineEvents(userId));
+                localStorage.setItem(`vertofi_screen_off_notice_${userId}`, new Date().toISOString());
+              } catch (e) {
+                console.warn('Auto clock out on screen off error:', e);
+              }
+            }
+          }, graceMs);
+        }
+      } else if (document.visibilityState === 'visible') {
+        // Screen turned back on / Tab focused
+        if (screenOffTimeoutRef.current) {
+          clearTimeout(screenOffTimeoutRef.current);
+          screenOffTimeoutRef.current = null;
+        }
+        lastActivityRef.current = Date.now();
+
+        // Check if user was auto clocked out while screen was off
+        const noticeTime = localStorage.getItem(`vertofi_screen_off_notice_${userId}`);
+        if (noticeTime) {
+          localStorage.removeItem(`vertofi_screen_off_notice_${userId}`);
+          addToast(
+            'Auto Clock-Out Activated',
+            'Your session was automatically clocked out because your screen was turned off or locked.',
+            'warning'
+          );
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('pagehide', handleVisibilityChange);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('pagehide', handleVisibilityChange);
+      if (screenOffTimeoutRef.current) clearTimeout(screenOffTimeoutRef.current);
+    };
+  }, [clockState.status, settings.autoClockOutOnScreenOff, settings.screenOffGraceSeconds, userId]);
+
+  // Master 1-second interval timer + Inactivity Verification Loop
   useEffect(() => {
     const timer = setInterval(() => {
-      setNow(new Date());
+      const currentTime = new Date();
+      setNow(currentTime);
+
+      // Inactivity Check for employees currently in WORKING state
+      if (clockState.status === 'WORKING' && settings.autoClockOutOnIdle !== false) {
+        const idleMs = Date.now() - lastActivityRef.current;
+        const idleSec = Math.floor(idleMs / 1000);
+        const timeoutSec = Math.max(60, (settings.idleTimeoutMinutes || 5) * 60);
+        const warningSec = settings.idleWarningSeconds || 30;
+        const warningStartSec = Math.max(10, timeoutSec - warningSec);
+
+        if (idleSec >= warningStartSec && idleSec < timeoutSec) {
+          setIsInactivityModalOpen(true);
+          setInactivitySecondsLeft(timeoutSec - idleSec);
+        } else if (idleSec >= timeoutSec && !autoClockOutTriggeredRef.current) {
+          autoClockOutTriggeredRef.current = true;
+          setIsInactivityModalOpen(false);
+
+          // Perform auto clock-out
+          api.clockOut(userId, `Auto Clocked Out: Cursor inactivity detected (No response for ${settings.idleTimeoutMinutes || 5} mins)`)
+            .then(res => {
+              setClockState(res.state);
+              setTimelineEvents(storage.getTimelineEvents(userId));
+              addToast(
+                'Auto Clocked Out (Inactivity)',
+                `You were automatically clocked out due to lack of cursor movement for ${settings.idleTimeoutMinutes || 5} minutes.`,
+                'warning'
+              );
+            })
+            .catch(err => {
+              console.warn('Inactivity auto clock out error:', err);
+            });
+        }
+      } else {
+        if (isInactivityModalOpen) {
+          setIsInactivityModalOpen(false);
+        }
+      }
     }, 1000);
+
     return () => clearInterval(timer);
-  }, []);
+  }, [clockState.status, settings.autoClockOutOnIdle, settings.idleTimeoutMinutes, settings.idleWarningSeconds, userId, isInactivityModalOpen]);
 
   // Format current live time (Exact seconds)
   const currentTimeFormatted = now.toLocaleTimeString([], {
@@ -309,6 +439,11 @@ export const WorkClockProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         setIsEditTaskModalOpen,
         isAddEmployeeModalOpen,
         setIsAddEmployeeModalOpen,
+        isInactivityModalOpen,
+        inactivitySecondsLeft,
+        maxWarningSeconds: settings.idleWarningSeconds || 30,
+        resetInactivityTimer,
+        isMonitoringActive: clockState.status === 'WORKING' && settings.autoClockOutOnIdle !== false,
         settings,
         updateSettings
       }}

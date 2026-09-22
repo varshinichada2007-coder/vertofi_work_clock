@@ -1,20 +1,24 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { User, UserRole } from '../types';
+import { User, UserRole, Organization } from '../types';
 import { storage } from '../services/storage';
-import { api, AddEmployeeParams, mapProfileToUser } from '../services/api';
-import { supabase } from '../lib/supabase';
+import { api, AddEmployeeParams } from '../services/api';
+import { supabaseDb } from '../services/supabaseDb';
 
 interface AuthContextType {
   user: User | null;
   role: UserRole;
   users: User[];
-  login: (email: string, password?: string) => Promise<void>;
-  addEmployee: (params: AddEmployeeParams) => Promise<User>;
-  deleteEmployee: (userId: string) => Promise<void>;
-  updateProfile: (updates: { name?: string; phone?: string; workLocation?: string; designation?: string }) => Promise<User>;
+  organization: Organization;
+  organizations: Organization[];
+  login: (email: string, password?: string) => Promise<User>;
   logout: () => Promise<void>;
+  switchOrganization: (orgId: string) => Promise<void>;
+  addEmployee: (params: AddEmployeeParams) => Promise<User>;
+  updateEmployee: (userId: string, updates: Partial<User>) => Promise<User>;
+  toggleEmployeeStatus: (userId: string) => Promise<User>;
+  updateProfile: (updates: Partial<User>) => Promise<User>;
   isLoading: boolean;
-  refreshUsers: () => Promise<User[]>;
+  refreshData: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -23,173 +27,153 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [role, setRole] = useState<UserRole>('EMPLOYEE');
   const [users, setUsers] = useState<User[]>([]);
+  const [organization, setOrganization] = useState<Organization>(storage.getCurrentOrganization());
+  const [organizations, setOrganizations] = useState<Organization[]>(storage.getOrganizations());
   const [isLoading, setIsLoading] = useState(true);
 
-  const refreshUsers = async (): Promise<User[]> => {
+  const refreshData = async () => {
     try {
-      const profiles = await api.getProfiles();
-      setUsers(profiles);
-      return profiles;
+      const orgs = await api.getOrganizations();
+      setOrganizations(orgs);
+      const currentOrg = await api.getCurrentOrganization();
+      setOrganization(currentOrg);
+
+      const orgUsers = await api.getEmployees(currentOrg.id);
+      setUsers(orgUsers);
+
+      const currentUser = storage.getCurrentUser();
+      if (currentUser) {
+        setUser(currentUser);
+        setRole(currentUser.role);
+      } else {
+        setUser(null);
+      }
     } catch (e) {
-      const local = storage.getUsers();
-      setUsers(local);
-      return local;
+      console.warn('Error refreshing auth context:', e);
     }
   };
 
-  // Listen to active Supabase authentication state & local storage session
   useEffect(() => {
     let isMounted = true;
-
-    // Safety timer to ensure isLoading never hangs on blank screen
-    const safetyTimer = setTimeout(() => {
-      if (isMounted) {
-        setIsLoading(false);
-      }
-    }, 1500);
-
-    const fetchSessionAndProfile = async () => {
+    const init = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user) {
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', session.user.id)
-            .maybeSingle();
+        const currentOrg = storage.getCurrentOrganization();
+        setOrganization(currentOrg);
+        setOrganizations(storage.getOrganizations());
 
-          if (profile && isMounted) {
-            const mapped = mapProfileToUser(profile);
-            setUser(mapped);
-            setRole(mapped.role);
-            storage.setCurrentUserId(mapped.id);
-            storage.addUser(mapped);
-          } else if (isMounted) {
-            const currentUser = storage.getCurrentUser();
-            if (currentUser) {
-              setUser(currentUser);
-              setRole(currentUser.role);
-            } else {
-              setUser(null);
-            }
+        // Sync fresh data from Supabase database
+        try {
+          await supabaseDb.checkAndSeedDefaults();
+          const remoteUsers = await supabaseDb.getProfiles();
+          if (remoteUsers && remoteUsers.length > 0 && isMounted) {
+            storage.setUsers(remoteUsers);
+            setUsers(remoteUsers.filter((u: User) => u.organizationId === currentOrg.id));
           }
-        } else if (isMounted) {
-          const currentUser = storage.getCurrentUser();
-          if (currentUser) {
-            setUser(currentUser);
-            setRole(currentUser.role);
-          } else {
-            setUser(null);
-          }
+        } catch (dbErr) {
+          console.warn('Initial Supabase sync notice:', dbErr);
         }
-      } catch (err) {
-        console.warn('Supabase auth session check warning:', err);
-        if (isMounted) {
-          const currentUser = storage.getCurrentUser();
-          if (currentUser) {
-            setUser(currentUser);
-            setRole(currentUser.role);
-          } else {
-            setUser(null);
-          }
+
+        const currentUser = storage.getCurrentUser();
+        if (currentUser && isMounted) {
+          setUser(currentUser);
+          setRole(currentUser.role);
+          const orgUsers = storage.getUsers(currentUser.organizationId);
+          setUsers(orgUsers);
         }
       } finally {
         if (isMounted) {
           setIsLoading(false);
-          refreshUsers();
         }
       }
     };
 
-    fetchSessionAndProfile();
+    init();
 
-    let authSub: { unsubscribe: () => void } | undefined = undefined;
-    try {
-      const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
-        if (session?.user) {
-          try {
-            const { data: profile } = await supabase
-              .from('profiles')
-              .select('*')
-              .eq('id', session.user.id)
-              .maybeSingle();
-
-            if (profile && isMounted) {
-              const mapped = mapProfileToUser(profile);
-              setUser(mapped);
-              setRole(mapped.role);
-              storage.setCurrentUserId(mapped.id);
-              storage.addUser(mapped);
-            }
-          } catch (e) {
-            console.error('Error loading profile on auth state change:', e);
-          }
-        }
-        if (isMounted) {
-          setIsLoading(false);
-          refreshUsers();
-        }
-      });
-      authSub = authListener?.subscription;
-    } catch (e) {
-      console.warn('onAuthStateChange listener warning:', e);
-    }
+    // Realtime listener on profiles table so multi-laptop edits reflect live
+    const profileSub = supabaseDb.subscribeToTableChanges('profiles', () => {
+      refreshData();
+    });
 
     return () => {
       isMounted = false;
-      clearTimeout(safetyTimer);
-      authSub?.unsubscribe();
+      profileSub?.unsubscribe?.();
     };
   }, []);
 
-  const login = async (email: string, password?: string) => {
+  const login = async (email: string, password?: string): Promise<User> => {
     setIsLoading(true);
     try {
       const loggedUser = await api.login(email, password);
       setUser(loggedUser);
       setRole(loggedUser.role);
-      await refreshUsers();
+      const org = storage.getCurrentOrganization();
+      setOrganization(org);
+      setUsers(storage.getUsers(org.id));
+      return loggedUser;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const logout = async () => {
+    setIsLoading(true);
+    try {
+      await api.logout();
+      setUser(null);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const switchOrganization = async (orgId: string) => {
+    setIsLoading(true);
+    try {
+      const org = await api.switchOrganization(orgId);
+      setOrganization(org);
+      const orgUsers = await api.getEmployees(org.id);
+      setUsers(orgUsers);
+      // If current user is not in new org, find admin of new org or sign out
+      const userInOrg = orgUsers.find(u => u.role === 'ADMIN') || orgUsers[0];
+      if (userInOrg) {
+        storage.setCurrentUserId(userInOrg.id);
+        setUser(userInOrg);
+        setRole(userInOrg.role);
+      }
     } finally {
       setIsLoading(false);
     }
   };
 
   const addEmployee = async (params: AddEmployeeParams): Promise<User> => {
-    const newUser = await api.addEmployee(params);
-    await refreshUsers();
+    const newUser = await api.addEmployee({
+      ...params,
+      organizationId: organization.id
+    });
+    await refreshData();
     return newUser;
   };
 
-  const deleteEmployee = async (userId: string): Promise<void> => {
-    await api.removeEmployee(userId);
-    await refreshUsers();
+  const updateEmployee = async (userId: string, updates: Partial<User>): Promise<User> => {
+    const updated = await api.updateEmployee(userId, updates);
     if (user?.id === userId) {
-      setUser(null);
-      await supabase.auth.signOut();
+      setUser(updated);
     }
+    await refreshData();
+    return updated;
   };
 
-  const updateProfile = async (updates: { name?: string; phone?: string; workLocation?: string; designation?: string }): Promise<User> => {
-    if (!user) throw new Error('No authenticated user.');
-    const updatedUser = await api.updateProfile(user.id, updates);
-    // Update the avatar URL if name changed (initials-based avatar)
-    if (updates.name) {
-      updatedUser.profileImage = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(updates.name)}&backgroundColor=0c8ee9,0270c7`;
-    }
-    setUser(updatedUser);
-    storage.updateUser(updatedUser);
-    return updatedUser;
+  const toggleEmployeeStatus = async (userId: string): Promise<User> => {
+    const toggled = await api.toggleEmployeeStatus(userId);
+    await refreshData();
+    return toggled;
   };
 
-  const logout = async () => {
-    setIsLoading(true);
-    try {
-      await supabase.auth.signOut();
-      storage.setCurrentUserId(null);
-      setUser(null);
-    } finally {
-      setIsLoading(false);
-    }
+  const updateProfile = async (updates: Partial<User>): Promise<User> => {
+    if (!user) throw new Error('No user logged in.');
+    const updated = await api.updateEmployee(user.id, updates);
+    setUser(updated);
+    await refreshData();
+    return updated;
   };
 
   return (
@@ -198,13 +182,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         user,
         role,
         users,
+        organization,
+        organizations,
         login,
-        addEmployee,
-        deleteEmployee,
-        updateProfile,
         logout,
+        switchOrganization,
+        addEmployee,
+        updateEmployee,
+        toggleEmployeeStatus,
+        updateProfile,
         isLoading,
-        refreshUsers
+        refreshData
       }}
     >
       {children}

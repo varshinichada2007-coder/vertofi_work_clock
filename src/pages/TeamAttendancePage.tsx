@@ -189,11 +189,9 @@ export const TeamAttendancePage: React.FC = () => {
                       >
                         <td className="p-4 font-semibold text-white">
                           <div className="flex items-center gap-3">
-                            <img
-                              src={m.user.profileImage}
-                              alt={m.user.name}
-                              className="w-8 h-8 rounded-full object-cover border border-slate-700"
-                            />
+                            <div className="w-8 h-8 rounded-full bg-brand-500/20 text-brand-300 font-bold text-xs flex items-center justify-center border border-brand-500/30 shrink-0">
+                              {m.user.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                            </div>
                             <div>
                               <div className="font-bold text-white flex items-center gap-1.5">
                                 {m.user.name}

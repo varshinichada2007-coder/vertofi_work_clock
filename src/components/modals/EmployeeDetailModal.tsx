@@ -1,28 +1,37 @@
 import React, { useState, useEffect } from 'react';
-import { X, UserCheck, Calendar, Clock, Coffee, Timer, Activity, Mail, Phone, MapPin, Trash2, AlertTriangle } from 'lucide-react';
-import { User, AttendanceRecord, BreakRecord, WorkSession } from '../../types';
+import {
+  X, UserCheck, Calendar, Clock, Coffee, Timer, Activity, Mail, Phone,
+  MapPin, Trash2, AlertTriangle, Shield, CheckCircle2, TrendingUp
+} from 'lucide-react';
+import { User, AttendanceRecord, BreakRecord, WorkSession, TeamMemberStatus } from '../../types';
 import { api, MAX_DAILY_BREAK_SECONDS } from '../../services/api';
 import { formatSecondsToHM } from '../../services/exportUtils';
 import { useAuth } from '../../context/AuthContext';
 import { useWorkClock } from '../../context/WorkClockContext';
 import { storage } from '../../services/storage';
 
-interface EmployeeDetailModalProps {
-  employee: User | null;
+export interface EmployeeDetailModalProps {
+  member?: TeamMemberStatus | { user: User; [key: string]: any } | null;
+  employee?: User | null;
+  isOpen?: boolean;
   onClose: () => void;
 }
 
-export const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({ employee, onClose }) => {
-  const { user: loggedInUser, deleteEmployee } = useAuth();
+export const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({
+  member,
+  employee: rawEmployee,
+  isOpen = true,
+  onClose
+}) => {
+  const targetUser: User | null = member?.user || rawEmployee || null;
+  const { user: loggedInUser, organization, toggleEmployeeStatus } = useAuth();
   const { addToast } = useWorkClock();
   const [activeTab, setActiveTab] = useState<'overview' | 'breaks' | 'attendance' | 'sessions'>('overview');
   const [attendanceHistory, setAttendanceHistory] = useState<AttendanceRecord[]>([]);
   const [breakHistory, setBreakHistory] = useState<BreakRecord[]>([]);
   const [workSessions, setWorkSessions] = useState<WorkSession[]>([]);
-  const [confirmDelete, setConfirmDelete] = useState(false);
   const [now, setNow] = useState<Date>(new Date());
 
-  // Master 1-second live ticker
   useEffect(() => {
     const timer = setInterval(() => {
       setNow(new Date());
@@ -31,20 +40,19 @@ export const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({ employ
   }, []);
 
   useEffect(() => {
-    if (employee) {
-      api.getAttendanceHistory(employee.id).then(setAttendanceHistory);
-      api.getBreakHistory(employee.id).then(setBreakHistory);
-      api.getWorkSessions(employee.id).then(setWorkSessions);
+    if (targetUser?.id) {
+      api.getAttendanceHistory(targetUser.id, organization?.id).then(setAttendanceHistory);
+      api.getBreakHistory(targetUser.id).then(setBreakHistory);
+      api.getWorkSessions(targetUser.id).then(setWorkSessions);
     }
-  }, [employee, now]);
+  }, [targetUser?.id, organization?.id]);
 
-  if (!employee) return null;
+  if (!isOpen || !targetUser) return null;
 
   const isAdmin = loggedInUser?.role === 'ADMIN';
-  const activeClockState = storage.getActiveClockState(employee.id);
-  const todayRecord = attendanceHistory[0];
+  const activeClockState = storage.getActiveClockState(targetUser.id);
+  const todayRecord = attendanceHistory.find(r => r.date === new Date().toISOString().split('T')[0]) || attendanceHistory[0];
 
-  // Calculate LIVE work seconds & LIVE break seconds for ongoing sessions
   let liveWorkSec = 0;
   let liveTotalBreakSec = activeClockState.accumulatedBreakSeconds;
 
@@ -63,89 +71,63 @@ export const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({ employ
   }
 
   const breakRemSec = Math.max(0, MAX_DAILY_BREAK_SECONDS - liveTotalBreakSec);
+  const overtimeSec = Math.max(0, liveWorkSec - 28800);
 
   const clockInDisplay = activeClockState.clockInTimestamp
     ? new Date(activeClockState.clockInTimestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
     : (todayRecord?.clockIn || 'Not Clocked In');
 
   const statusDisplay = activeClockState.status === 'WORKING'
-    ? '🟢 Working (Ongoing)'
+    ? '🟢 Working (Active Shift)'
     : activeClockState.status === 'ON_BREAK'
-    ? '🟡 On Break (Ongoing)'
+    ? '🟡 On Break'
     : activeClockState.status === 'CLOCKED_OUT'
-    ? (todayRecord?.completionStatus || 'Clocked Out')
+    ? '🟣 Clocked Out'
+    : todayRecord?.status === 'LEAVE'
+    ? '🟣 On Leave'
     : 'Not Started';
 
-  const handleDelete = async () => {
-    try {
-      await deleteEmployee(employee.id);
-      addToast('Employee Removed', `${employee.name} has been removed from the system.`, 'info');
-      onClose();
-    } catch (err: any) {
-      addToast('Error', err.message || 'Unable to remove employee.', 'error');
-    }
-  };
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="w-full max-w-4xl max-h-[90vh] rounded-3xl bg-slate-900 border border-slate-800 shadow-2xl flex flex-col overflow-hidden">
-        {/* Modal Header Banner */}
-        <div className="p-6 bg-slate-950/80 border-b border-slate-800 flex items-start justify-between">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="w-full max-w-4xl max-h-[90vh] rounded-2xl bg-white border border-slate-200 shadow-2xl flex flex-col overflow-hidden">
+        {/* Modal Header */}
+        <div className="p-6 bg-slate-50 border-b border-slate-200 flex items-start justify-between">
           <div className="flex items-center gap-4">
-            <img
-              src={employee.profileImage}
-              alt={employee.name}
-              className="w-16 h-16 rounded-full object-cover border-2 border-brand-500/50 shadow-lg"
-            />
+            <div className="w-16 h-16 rounded-2xl bg-brand-50 border-2 border-brand-200 text-brand-700 font-bold flex items-center justify-center text-xl shadow-xs shrink-0">
+              {targetUser.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+            </div>
             <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-xl font-bold text-white">{employee.name}</h2>
-                <span className="text-xs px-2.5 py-0.5 rounded-full font-bold bg-brand-500/20 text-brand-300 border border-brand-500/30">
-                  {employee.employeeId}
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-xl font-bold text-slate-900">{targetUser.name}</h2>
+                <span className="text-xs px-2.5 py-0.5 rounded-full font-bold bg-brand-50 text-brand-700 border border-brand-200">
+                  {targetUser.employeeId}
                 </span>
-                <span className="text-xs px-2.5 py-0.5 rounded-full font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                  {employee.employeeType || 'Employee'}
+                <span className="text-xs px-2.5 py-0.5 rounded-full font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  {targetUser.employeeType || 'Employee'}
+                </span>
+                <span
+                  className={`text-xs px-2.5 py-0.5 rounded-full font-bold ${
+                    targetUser.status === 'DEACTIVATED'
+                      ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                      : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                  }`}
+                >
+                  {targetUser.status === 'DEACTIVATED' ? 'Deactivated' : 'Active Account'}
                 </span>
               </div>
-              <p className="text-xs text-slate-400 font-medium mt-0.5">{employee.designation} • {employee.department}</p>
-              <div className="flex flex-wrap items-center gap-4 text-xs text-slate-400 mt-2">
-                <span className="flex items-center gap-1"><Mail className="w-3.5 h-3.5 text-slate-500" /> {employee.email}</span>
-                <span className="flex items-center gap-1"><Phone className="w-3.5 h-3.5 text-slate-500" /> {employee.phone}</span>
-                <span className="flex items-center gap-1"><Calendar className="w-3.5 h-3.5 text-brand-400" /> Joined: {employee.joiningDate || '2025-01-01'}</span>
+              <p className="text-xs text-slate-600 font-medium mt-1">{targetUser.designation} • {targetUser.department}</p>
+              <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500 mt-2">
+                <span className="flex items-center gap-1"><Mail className="w-3.5 h-3.5 text-slate-400" /> {targetUser.email}</span>
+                <span className="flex items-center gap-1"><Phone className="w-3.5 h-3.5 text-slate-400" /> {targetUser.phone}</span>
+                <span className="flex items-center gap-1"><Calendar className="w-3.5 h-3.5 text-brand-600" /> Joined: {targetUser.joiningDate || '2025-01-01'}</span>
               </div>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
-            {isAdmin && employee.role !== 'ADMIN' && (
-              !confirmDelete ? (
-                <button
-                  onClick={() => setConfirmDelete(true)}
-                  className="px-3 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 text-xs font-bold flex items-center gap-1.5"
-                >
-                  <Trash2 className="w-3.5 h-3.5" /> Remove
-                </button>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={handleDelete}
-                    className="px-3 py-1.5 rounded-xl bg-rose-600 text-white text-xs font-bold hover:bg-rose-700"
-                  >
-                    Confirm Delete
-                  </button>
-                  <button
-                    onClick={() => setConfirmDelete(false)}
-                    className="px-3 py-1.5 rounded-xl bg-slate-800 text-slate-300 text-xs font-bold"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              )
-            )}
-
             <button
               onClick={onClose}
-              className="text-slate-400 hover:text-white p-2 rounded-xl hover:bg-slate-800"
+              className="text-slate-400 hover:text-slate-700 p-2 rounded-xl hover:bg-slate-200/60 transition-colors"
             >
               <X className="w-5 h-5" />
             </button>
@@ -153,20 +135,20 @@ export const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({ employ
         </div>
 
         {/* Navigation Tabs */}
-        <div className="flex border-b border-slate-800 px-6 bg-slate-900">
+        <div className="flex border-b border-slate-200 px-6 bg-white">
           {[
-            { id: 'overview', label: 'Today Overview' },
-            { id: 'breaks', label: 'Exact Break History' },
-            { id: 'attendance', label: 'Attendance Logs' },
-            { id: 'sessions', label: 'Work Sessions' },
+            { id: 'overview', label: "Today's Overview" },
+            { id: 'attendance', label: 'Monthly Attendance Logs' },
+            { id: 'breaks', label: 'Break History' },
+            { id: 'sessions', label: 'Work Focus Sessions' }
           ].map(tab => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id as any)}
               className={`px-4 py-3 text-xs font-bold border-b-2 transition-all ${
                 activeTab === tab.id
-                  ? 'border-brand-500 text-brand-400'
-                  : 'border-transparent text-slate-400 hover:text-white'
+                  ? 'border-brand-600 text-brand-700'
+                  : 'border-transparent text-slate-500 hover:text-slate-900'
               }`}
             >
               {tab.label}
@@ -179,103 +161,148 @@ export const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({ employ
           {activeTab === 'overview' && (
             <div className="space-y-6">
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                <div className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800">
-                  <span className="text-[11px] text-slate-400 uppercase font-semibold">Clock In Time</span>
-                  <p className="text-base font-bold text-emerald-400 mt-1">{clockInDisplay}</p>
+                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
+                  <span className="text-[11px] text-slate-500 uppercase font-semibold">Clock In</span>
+                  <p className="text-base font-bold text-emerald-600 mt-1">{clockInDisplay}</p>
                   {todayRecord?.isLate && (
-                    <span className="text-[10px] text-amber-400 font-semibold block mt-0.5">
-                      Late by {todayRecord.lateMinutes} mins
+                    <span className="text-[10px] text-amber-700 font-semibold block mt-0.5">
+                      Late by {todayRecord.lateMinutes}m
                     </span>
                   )}
                 </div>
-                <div className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800">
-                  <span className="text-[11px] text-slate-400 uppercase font-semibold">Clock Out</span>
-                  <p className="text-base font-bold text-rose-400 mt-1">{todayRecord?.clockOut || '---'}</p>
+                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
+                  <span className="text-[11px] text-slate-500 uppercase font-semibold">Clock Out</span>
+                  <p className="text-base font-bold text-rose-600 mt-1">{todayRecord?.clockOut || '---'}</p>
                 </div>
-                <div className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800">
-                  <span className="text-[11px] text-slate-400 uppercase font-semibold">Total Break Used</span>
-                  <p className="text-base font-bold text-amber-400 mt-1">{Math.floor(liveTotalBreakSec / 60)} min</p>
+                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
+                  <span className="text-[11px] text-slate-500 uppercase font-semibold">Total Break Used</span>
+                  <p className="text-base font-bold text-amber-700 mt-1">{Math.floor(liveTotalBreakSec / 60)} min</p>
                 </div>
-                <div className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800">
-                  <span className="text-[11px] text-slate-400 uppercase font-semibold">Break Remaining</span>
-                  <p className="text-base font-bold text-emerald-400 mt-1">{Math.floor(breakRemSec / 60)} min</p>
+                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
+                  <span className="text-[11px] text-slate-500 uppercase font-semibold">Overtime</span>
+                  <p className="text-base font-bold text-purple-700 mt-1">{formatSecondsToHM(overtimeSec)}</p>
                 </div>
               </div>
 
-              <div className="p-4 rounded-2xl bg-slate-950/40 border border-slate-800 flex items-center justify-between">
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between">
                 <div>
-                  <h4 className="text-xs uppercase font-bold text-slate-400 mb-1">Workday Completion Status</h4>
-                  <p className="text-sm font-bold text-white">{statusDisplay}</p>
+                  <h4 className="text-xs uppercase font-bold text-slate-500 mb-1">Workday Status</h4>
+                  <p className="text-sm font-bold text-slate-900">{statusDisplay}</p>
                 </div>
                 <div className="text-right">
-                  <span className="text-xs uppercase font-bold text-slate-400 block mb-1">Net Work Time (Live)</span>
-                  <span className="font-mono text-xl font-black text-brand-400 animate-pulse-subtle">
+                  <span className="text-xs uppercase font-bold text-slate-500 block mb-1">Net Work Time</span>
+                  <span className="font-mono text-xl font-black text-brand-700">
                     {formatSecondsToHM(liveWorkSec)}
                   </span>
                 </div>
               </div>
 
-              <div className="p-4 rounded-2xl bg-slate-950/40 border border-slate-800">
-                <h4 className="text-xs uppercase font-bold text-slate-400 mb-2">Current Active Task</h4>
-                <p className="text-sm font-semibold text-white">"{activeClockState.currentActivity || 'No active task'}"</p>
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
+                <h4 className="text-xs uppercase font-bold text-slate-500 mb-1">Active Task / Activity</h4>
+                <p className="text-sm font-semibold text-slate-900">"{activeClockState.currentActivity || todayRecord?.initialTask || 'No active task'}"</p>
               </div>
+            </div>
+          )}
+
+          {activeTab === 'attendance' && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 text-slate-600 uppercase font-semibold border-b border-slate-200">
+                  <tr>
+                    <th className="p-3">Date</th>
+                    <th className="p-3">Day</th>
+                    <th className="p-3">Clock In</th>
+                    <th className="p-3">Clock Out</th>
+                    <th className="p-3">Break Time</th>
+                    <th className="p-3">Work Hours</th>
+                    <th className="p-3">Overtime</th>
+                    <th className="p-3">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {attendanceHistory.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="p-6 text-center text-slate-500">
+                        No attendance logs yet.
+                      </td>
+                    </tr>
+                  ) : (
+                    attendanceHistory.map((att) => (
+                      <tr key={att.id} className="hover:bg-slate-50/80">
+                        <td className="p-3 font-semibold text-slate-900">{att.date}</td>
+                        <td className="p-3 text-slate-600">{att.dayName}</td>
+                        <td className="p-3 text-emerald-700 font-mono font-medium">{att.clockIn || '---'}</td>
+                        <td className="p-3 text-rose-700 font-mono font-medium">{att.clockOut || '---'}</td>
+                        <td className="p-3 text-amber-700 font-mono">{formatSecondsToHM(att.totalBreakSeconds)}</td>
+                        <td className="p-3 text-brand-700 font-mono font-bold">{formatSecondsToHM(att.netWorkSeconds)}</td>
+                        <td className="p-3 text-purple-700 font-mono">{formatSecondsToHM(att.overtimeSeconds)}</td>
+                        <td className="p-3">
+                          <span className={`px-2 py-0.5 rounded font-bold text-[10px] ${
+                            att.status === 'LEAVE'
+                              ? 'bg-purple-50 text-purple-700 border border-purple-200'
+                              : att.status === 'LATE' || att.isLate
+                              ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                              : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                          }`}>
+                            {att.status}
+                          </span>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
             </div>
           )}
 
           {activeTab === 'breaks' && (
             <div className="space-y-4">
-              <h4 className="text-xs uppercase font-bold text-slate-400">
-                Exact Break Timestamps & Breakdown (Max 60 Minutes Daily Limit)
-              </h4>
-
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-950/80 text-slate-400 uppercase font-semibold border-b border-slate-800">
+                  <thead className="bg-slate-50 text-slate-600 uppercase font-semibold border-b border-slate-200">
                     <tr>
                       <th className="p-3">Break Type</th>
                       <th className="p-3">Start Time</th>
                       <th className="p-3">End Time</th>
-                      <th className="p-3">Duration (Live)</th>
+                      <th className="p-3">Duration</th>
                       <th className="p-3">Notes</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-800/60">
+                  <tbody className="divide-y divide-slate-100">
                     {breakHistory.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="p-6 text-center text-slate-400">
+                        <td colSpan={5} className="p-6 text-center text-slate-500">
                           No breaks recorded for this employee.
                         </td>
                       </tr>
                     ) : (
                       breakHistory.map(b => {
-                        const isOngoing = !b.endTime || b.endTime === 'Ongoing';
+                        const isOngoing = !b.endTime;
                         const durationSec = isOngoing
                           ? Math.floor((now.getTime() - new Date(b.startTime).getTime()) / 1000)
                           : b.durationSeconds;
 
                         return (
-                          <tr key={b.id} className="hover:bg-slate-800/40">
-                            <td className="p-3 font-semibold text-white">
-                              <span className="px-2 py-0.5 rounded text-[11px] bg-amber-500/10 text-amber-400 border border-amber-500/20 font-bold">
+                          <tr key={b.id} className="hover:bg-slate-50/80">
+                            <td className="p-3 font-semibold text-slate-900">
+                              <span className="px-2 py-0.5 rounded text-[11px] bg-amber-50 text-amber-700 border border-amber-200 font-bold">
                                 {b.breakType}
                               </span>
                             </td>
-                            <td className="p-3 text-slate-300 font-mono">
+                            <td className="p-3 text-slate-600 font-mono">
                               {new Date(b.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                             </td>
-                            <td className="p-3 text-slate-300 font-mono">
+                            <td className="p-3 text-slate-600 font-mono">
                               {isOngoing ? (
-                                <span className="inline-flex items-center gap-1.5 text-amber-400 font-semibold">
-                                  <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span> Ongoing
-                                </span>
+                                <span className="text-amber-700 font-semibold">Ongoing</span>
                               ) : (
                                 new Date(b.endTime!).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
                               )}
                             </td>
-                            <td className="p-3 text-amber-400 font-mono font-bold">
+                            <td className="p-3 text-amber-700 font-mono font-bold">
                               {Math.floor(durationSec / 60)} min ({durationSec}s)
                             </td>
-                            <td className="p-3 text-slate-400">{b.notes || '---'}</td>
+                            <td className="p-3 text-slate-500">{b.notes || '---'}</td>
                           </tr>
                         );
                       })
@@ -286,81 +313,25 @@ export const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({ employ
             </div>
           )}
 
-          {activeTab === 'attendance' && (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-slate-950/80 text-slate-400 uppercase font-semibold border-b border-slate-800">
-                  <tr>
-                    <th className="p-3">Date</th>
-                    <th className="p-3">Day</th>
-                    <th className="p-3">Clock In</th>
-                    <th className="p-3">Clock Out</th>
-                    <th className="p-3">Break Time</th>
-                    <th className="p-3">Work Hours (Live)</th>
-                    <th className="p-3">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800/60">
-                  {attendanceHistory.length === 0 ? (
-                    <tr>
-                      <td colSpan={7} className="p-6 text-center text-slate-400">
-                        No attendance logs yet.
-                      </td>
-                    </tr>
-                  ) : (
-                    attendanceHistory.map((att, idx) => {
-                      const isToday = idx === 0 && !att.clockOutTimestamp;
-                      const workSec = isToday ? liveWorkSec : att.netWorkSeconds;
-                      const breakSec = isToday ? liveTotalBreakSec : att.totalBreakSeconds;
-
-                      return (
-                        <tr key={att.id} className="hover:bg-slate-800/40">
-                          <td className="p-3 font-semibold text-white">{att.date}</td>
-                          <td className="p-3 text-slate-300">{att.dayName}</td>
-                          <td className="p-3 text-emerald-400 font-mono">{att.clockIn}</td>
-                          <td className="p-3 text-rose-400 font-mono">{att.clockOut || '---'}</td>
-                          <td className="p-3 text-amber-300 font-mono">{formatSecondsToHM(breakSec)}</td>
-                          <td className="p-3 text-brand-300 font-mono font-bold">{formatSecondsToHM(workSec)}</td>
-                          <td className="p-3">
-                            <span className="px-2 py-0.5 rounded font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                              {isToday ? (activeClockState.status === 'WORKING' ? 'Working' : activeClockState.status === 'ON_BREAK' ? 'On Break' : att.status) : (att.completionStatus || att.status)}
-                            </span>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-          )}
-
           {activeTab === 'sessions' && (
             <div className="space-y-3">
               {workSessions.length === 0 ? (
-                <div className="p-6 text-center text-slate-400">No work sessions recorded.</div>
+                <div className="p-6 text-center text-slate-500">No work sessions recorded.</div>
               ) : (
-                workSessions.map(ses => {
-                  const isOngoing = ses.status === 'Working' && !ses.endTime;
-                  const durationSec = isOngoing
-                    ? Math.floor((now.getTime() - new Date(ses.startTime).getTime()) / 1000)
-                    : ses.durationSeconds;
-
-                  return (
-                    <div key={ses.id} className="p-4 rounded-2xl bg-slate-950/40 border border-slate-800 flex items-center justify-between">
-                      <div>
-                        <h4 className="text-sm font-bold text-white">{ses.activity}</h4>
-                        <p className="text-xs text-slate-400 mt-1">
-                          {new Date(ses.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} →{' '}
-                          {isOngoing ? 'Active Now' : new Date(ses.endTime!).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        </p>
-                      </div>
-                      <div className="font-mono text-sm font-bold text-brand-400">
-                        {formatSecondsToHM(durationSec)}
-                      </div>
+                workSessions.map(ses => (
+                  <div key={ses.id} className="p-4 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between">
+                    <div>
+                      <h4 className="text-sm font-bold text-slate-900">{ses.activity}</h4>
+                      <p className="text-xs text-slate-500 mt-1">
+                        {new Date(ses.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} →{' '}
+                        {ses.endTime ? new Date(ses.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Active Now'}
+                      </p>
                     </div>
-                  );
-                })
+                    <div className="font-mono text-sm font-bold text-brand-700">
+                      {formatSecondsToHM(ses.durationSeconds)}
+                    </div>
+                  </div>
+                ))
               )}
             </div>
           )}
