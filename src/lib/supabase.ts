@@ -1,11 +1,11 @@
 /// <reference types="vite/client" />
 import { createClient } from '@supabase/supabase-js';
 
-const dummyUrl = 'https://placeholder.supabase.co';
-const dummyKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.placeholder';
+const DEFAULT_SUPABASE_URL = 'https://xcnuadmazbbohdzwqvpg.supabase.co';
+const DEFAULT_SUPABASE_KEY = 'sb_publishable_jo-_edQmK0oglpMwu8V1-g_gSMGtJNU';
 
-const envUrl = import.meta.env.VITE_SUPABASE_URL;
-const envKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY;
+const rawUrl = import.meta.env.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL;
+const rawKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY || DEFAULT_SUPABASE_KEY;
 
 const isValidUrl = (url?: string) => {
   if (!url || typeof url !== 'string') return false;
@@ -18,14 +18,7 @@ const isValidUrl = (url?: string) => {
 };
 
 export const isSupabaseConfigured = (): boolean => {
-  return isValidUrl(envUrl) && typeof envKey === 'string' && envKey.trim().length > 0 && !envUrl?.includes('placeholder');
+  return isValidUrl(rawUrl) && typeof rawKey === 'string' && rawKey.trim().length > 0 && !rawUrl.includes('placeholder');
 };
 
-const supabaseUrl = isValidUrl(envUrl) ? envUrl! : dummyUrl;
-const supabasePublishableKey = envKey && envKey.trim().length > 0 ? envKey : dummyKey;
-
-if (!isSupabaseConfigured()) {
-  console.warn('Supabase environment variables are missing or unconfigured. Using local storage fallback mode.');
-}
-
-export const supabase = createClient(supabaseUrl, supabasePublishableKey);
+export const supabase = createClient(rawUrl, rawKey);
