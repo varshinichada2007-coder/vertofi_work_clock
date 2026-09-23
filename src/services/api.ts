@@ -445,7 +445,10 @@ export const api = {
       console.warn('Supabase sync in getTodayAttendance:', e);
     }
 
-    const todayRecord = records.find(r => r.userId === userId && r.date === todayStr);
+    const todayRecord = records.find(r => 
+      (r.userId === userId || r.userId === user?.employeeId) && 
+      (r.date === todayStr || (r.clockInTimestamp && (Date.now() - Number(r.clockInTimestamp)) < 24 * 3600 * 1000))
+    );
     let activeClockState = storage.getActiveClockState(userId);
 
     if (todayRecord) {
@@ -454,21 +457,30 @@ export const api = {
         (todayRecord.clockOut && todayRecord.clockOut !== '—' && todayRecord.clockOut !== '' && todayRecord.clockOut.trim().length > 0)
       );
 
+      const isOnBreak = !hasActualClockOut && (
+        todayRecord.status === 'ON_BREAK' || 
+        activeClockState.status === 'ON_BREAK'
+      );
+
       let status: EmployeeStatus = 'NOT_CLOCKED_IN';
       if (hasActualClockOut) {
         status = 'CLOCKED_OUT';
-      } else if (todayRecord.status === 'ON_BREAK') {
+      } else if (isOnBreak) {
         status = 'ON_BREAK';
       } else if (todayRecord.clockInTimestamp || (todayRecord.clockIn && todayRecord.clockIn !== '—')) {
         status = 'WORKING';
       }
 
+      const breakStartTs = status === 'ON_BREAK' 
+        ? (activeClockState.currentBreakStartTimestamp || Date.now()) 
+        : null;
+
       activeClockState = {
         status,
         clockInTimestamp: todayRecord.clockInTimestamp || activeClockState.clockInTimestamp,
         clockOutTimestamp: hasActualClockOut ? (todayRecord.clockOutTimestamp || activeClockState.clockOutTimestamp) : null,
-        accumulatedBreakSeconds: todayRecord.totalBreakSeconds || 0,
-        currentBreakStartTimestamp: status === 'ON_BREAK' ? (activeClockState.currentBreakStartTimestamp || Date.now()) : null,
+        accumulatedBreakSeconds: todayRecord.totalBreakSeconds || activeClockState.accumulatedBreakSeconds || 0,
+        currentBreakStartTimestamp: breakStartTs,
         currentBreakType: status === 'ON_BREAK' ? (activeClockState.currentBreakType || 'Personal') : null,
         currentActivity: todayRecord.currentActivity || todayRecord.initialTask || 'Working',
         initialTask: todayRecord.initialTask || 'Work Shift',
