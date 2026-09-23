@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
+import { supabaseDb } from '../services/supabaseDb';
 import { AttendanceRecord, User } from '../types';
 import { EmployeeDetailModal } from '../components/modals/EmployeeDetailModal';
 
@@ -38,6 +39,14 @@ export const AdminAttendancePage: React.FC = () => {
 
   useEffect(() => {
     fetchData();
+    const interval = setInterval(fetchData, 3000);
+    const subAtt = supabaseDb.subscribeToTableChanges('attendance_records', () => {
+      fetchData();
+    });
+    return () => {
+      clearInterval(interval);
+      subAtt?.unsubscribe?.();
+    };
   }, [organization?.id]);
 
   const departments = Array.from(new Set(employees.map(e => e.department).filter(Boolean)));

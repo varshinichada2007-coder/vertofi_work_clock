@@ -14,137 +14,123 @@ export class SupabaseDbService {
   async checkAndSeedDefaults(): Promise<void> {
     if (!this.isConfigured()) return;
     try {
-      const { data: existingProfiles, error } = await supabase
-        .from('profiles')
-        .select('id')
-        .limit(1);
+      // Seed Organization
+      await supabase.from('organizations').upsert([
+        {
+          id: 'org_vertofi',
+          name: 'Vertofi',
+          code: 'VERTOFI-HQ',
+          standard_hours: 8.0,
+          max_break_minutes: 60,
+          timezone: 'Asia/Kolkata'
+        }
+      ]);
 
-      if (error) {
-        console.warn('Supabase profiles check error (check if schema is applied):', error.message);
-        return;
-      }
-
-      if (!existingProfiles || existingProfiles.length === 0) {
-        console.log('Seeding initial Supabase default organization and accounts...');
-        
-        // Seed Organization
-        await supabase.from('organizations').upsert([
-          {
-            id: 'org_vertofi',
-            name: 'Vertofi',
-            code: 'VERTOFI-HQ',
-            standard_hours: 8.0,
-            max_break_minutes: 60,
-            timezone: 'Asia/Kolkata'
-          }
-        ]);
-
-        // Seed Profiles with the authentic accounts
-        await supabase.from('profiles').upsert([
-          {
-            id: 'f45bd396-988c-4f4a-8c85-f203722a1d41',
-            organization_id: 'org_vertofi',
-            name: 'Goutham Badiga',
-            email: 'gouthambadiga01@gmail.com',
-            password: 'Vertofi@Fintech12',
-            employee_id: 'AD001',
-            department: 'Administration',
-            designation: 'System Administrator',
-            role: 'ADMIN',
-            employee_type: 'Employee',
-            joining_date: '2026-09-04',
-            phone: '+91 9666417876',
-            work_location: 'Headquarters',
-            manager_name: 'Board of Directors',
-            status: 'ACTIVE'
-          },
-          {
-            id: '3f72f92d-f0c5-48ce-8e02-b0bc83ec3ba7',
-            organization_id: 'org_vertofi',
-            name: 'Parvatham Geethika',
-            email: 'parvathamgeethika@gmail.com',
-            password: 'Geethika@123',
-            employee_id: 'EMP001',
-            department: 'Engineering',
-            designation: 'Frontend Intern',
-            role: 'EMPLOYEE',
-            employee_type: 'Intern',
-            joining_date: '2026-09-04',
-            phone: '+91 9603556970',
-            work_location: 'Work From Home',
-            manager_name: 'Goutham Badiga (Admin)',
-            status: 'ACTIVE'
-          },
-          {
-            id: '22b17343-5a98-4791-a81a-bef302715d09',
-            organization_id: 'org_vertofi',
-            name: 'Varshini Chada',
-            email: 'varshinichada2007@gmail.com',
-            password: 'Varshini@123',
-            employee_id: 'EMP002',
-            department: 'Engineering',
-            designation: 'Frontend Intern',
-            role: 'EMPLOYEE',
-            employee_type: 'Intern',
-            joining_date: '2026-09-05',
-            phone: '+91 9652383330',
-            work_location: 'Work From Home',
-            manager_name: 'Goutham Badiga (Admin)',
-            status: 'ACTIVE'
-          },
-          {
-            id: 'f0db1ceb-584e-4282-ae7b-2707bab456ab',
-            organization_id: 'org_vertofi',
-            name: 'Dasari Pravallika',
-            email: 'dasaripravallika137@gmail.com',
-            password: 'Pravallika@123',
-            employee_id: 'EMP003',
-            department: 'Engineering',
-            designation: 'Technical Intern',
-            role: 'EMPLOYEE',
-            employee_type: 'Intern',
-            joining_date: '2026-09-05',
-            phone: '+91 9701172908',
-            work_location: 'Work From Home',
-            manager_name: 'Goutham Badiga (Admin)',
-            status: 'ACTIVE'
-          },
-          {
-            id: 'f9ee9b4b-a254-46d1-8ea6-5d191e5b7718',
-            organization_id: 'org_vertofi',
-            name: 'Polamuri Lohith',
-            email: 'lohithpolamuri630@gmail.com',
-            password: 'Lohith@123',
-            employee_id: 'EMP004',
-            department: 'Engineering',
-            designation: 'Technical Intern ( full stack)',
-            role: 'EMPLOYEE',
-            employee_type: 'Intern',
-            joining_date: '2026-09-05',
-            phone: '+91 6303154495',
-            work_location: 'Work From Home',
-            manager_name: 'Goutham Badiga (Admin)',
-            status: 'ACTIVE'
-          },
-          {
-            id: '1b97461f-5f16-4976-a6fc-4ade9bc396fc',
-            organization_id: 'org_vertofi',
-            name: 'Mohammad Suhana',
-            email: 'mdsuhana231@gmail.com',
-            password: 'Suhana@123',
-            employee_id: 'EMP005',
-            department: 'Engineering',
-            designation: 'AI&ML engineer ( full stack )',
-            role: 'EMPLOYEE',
-            employee_type: 'Intern',
-            joining_date: '2026-09-05',
-            phone: '+91 9059637295',
-            work_location: 'Work From Home',
-            manager_name: 'Goutham Badiga (Admin)',
-            status: 'ACTIVE'
-          }
-        ]);
-      }
+      // Seed Profiles with the authentic accounts (ensure all exist)
+      await supabase.from('profiles').upsert([
+        {
+          id: 'f45bd396-988c-4f4a-8c85-f203722a1d41',
+          organization_id: 'org_vertofi',
+          name: 'Goutham Badiga',
+          email: 'gouthambadiga01@gmail.com',
+          password: 'Vertofi@Fintech12',
+          employee_id: 'AD001',
+          department: 'Administration',
+          designation: 'System Administrator',
+          role: 'ADMIN',
+          employee_type: 'Employee',
+          joining_date: '2026-09-04',
+          phone: '+91 9666417876',
+          work_location: 'Headquarters',
+          manager_name: 'Board of Directors',
+          status: 'ACTIVE'
+        },
+        {
+          id: '3f72f92d-f0c5-48ce-8e02-b0bc83ec3ba7',
+          organization_id: 'org_vertofi',
+          name: 'Parvatham Geethika',
+          email: 'parvathamgeethika@gmail.com',
+          password: 'Geethika@123',
+          employee_id: 'EMP001',
+          department: 'Engineering',
+          designation: 'Frontend Intern',
+          role: 'EMPLOYEE',
+          employee_type: 'Intern',
+          joining_date: '2026-09-04',
+          phone: '+91 9603556970',
+          work_location: 'Work From Home',
+          manager_name: 'Goutham Badiga (Admin)',
+          status: 'ACTIVE'
+        },
+        {
+          id: '22b17343-5a98-4791-a81a-bef302715d09',
+          organization_id: 'org_vertofi',
+          name: 'Varshini Chada',
+          email: 'varshinichada2007@gmail.com',
+          password: 'Varshini@123',
+          employee_id: 'EMP002',
+          department: 'Engineering',
+          designation: 'Frontend Intern',
+          role: 'EMPLOYEE',
+          employee_type: 'Intern',
+          joining_date: '2026-09-05',
+          phone: '+91 9652383330',
+          work_location: 'Work From Home',
+          manager_name: 'Goutham Badiga (Admin)',
+          status: 'ACTIVE'
+        },
+        {
+          id: 'f0db1ceb-584e-4282-ae7b-2707bab456ab',
+          organization_id: 'org_vertofi',
+          name: 'Dasari Pravallika',
+          email: 'dasaripravallika137@gmail.com',
+          password: 'Pravallika@123',
+          employee_id: 'EMP003',
+          department: 'Engineering',
+          designation: 'Technical Intern',
+          role: 'EMPLOYEE',
+          employee_type: 'Intern',
+          joining_date: '2026-09-05',
+          phone: '+91 9701172908',
+          work_location: 'Work From Home',
+          manager_name: 'Goutham Badiga (Admin)',
+          status: 'ACTIVE'
+        },
+        {
+          id: 'f9ee9b4b-a254-46d1-8ea6-5d191e5b7718',
+          organization_id: 'org_vertofi',
+          name: 'Polamuri Lohith',
+          email: 'lohithpolamuri630@gmail.com',
+          password: 'Lohith@123',
+          employee_id: 'EMP004',
+          department: 'Engineering',
+          designation: 'Technical Intern ( full stack)',
+          role: 'EMPLOYEE',
+          employee_type: 'Intern',
+          joining_date: '2026-09-05',
+          phone: '+91 6303154495',
+          work_location: 'Work From Home',
+          manager_name: 'Goutham Badiga (Admin)',
+          status: 'ACTIVE'
+        },
+        {
+          id: '1b97461f-5f16-4976-a6fc-4ade9bc396fc',
+          organization_id: 'org_vertofi',
+          name: 'Mohammad Suhana',
+          email: 'mdsuhana231@gmail.com',
+          password: 'Suhana@123',
+          employee_id: 'EMP005',
+          department: 'Engineering',
+          designation: 'AI&ML engineer ( full stack )',
+          role: 'EMPLOYEE',
+          employee_type: 'Intern',
+          joining_date: '2026-09-05',
+          phone: '+91 9059637295',
+          work_location: 'Work From Home',
+          manager_name: 'Goutham Badiga (Admin)',
+          status: 'ACTIVE'
+        }
+      ]);
     } catch (err) {
       console.warn('Supabase seeding attempt notice:', err);
     }
@@ -244,7 +230,10 @@ export class SupabaseDbService {
       let query = supabase.from('attendance_records').select('*');
       if (orgId) query = query.eq('organization_id', orgId);
       const { data, error } = await query;
-      if (error || !data) return null;
+      if (error || !data) {
+        console.warn('Supabase getAttendanceRecords error:', error?.message);
+        return null;
+      }
       return data.map(r => ({
         id: r.id,
         organizationId: r.organization_id || 'org_vertofi',
@@ -270,6 +259,7 @@ export class SupabaseDbService {
         updatedAt: r.updated_at
       }));
     } catch (e) {
+      console.error('Error in getAttendanceRecords from Supabase:', e);
       return null;
     }
   }
@@ -285,8 +275,8 @@ export class SupabaseDbService {
         day_name: rec.dayName,
         clock_in: rec.clockIn || '—',
         clock_in_timestamp: rec.clockInTimestamp || 0,
-        clock_out: rec.clockOut,
-        clock_out_timestamp: rec.clockOutTimestamp,
+        clock_out: rec.clockOut || null,
+        clock_out_timestamp: rec.clockOutTimestamp || null,
         total_break_seconds: rec.totalBreakSeconds || 0,
         total_work_seconds: rec.totalDurationSeconds || rec.netWorkSeconds || 0,
         net_work_seconds: rec.netWorkSeconds || 0,
@@ -294,13 +284,18 @@ export class SupabaseDbService {
         completion_status: rec.completionStatus || 'Working',
         is_late: rec.isLate || false,
         late_minutes: rec.lateMinutes || 0,
-        initial_task: rec.initialTask,
-        current_activity: rec.currentActivity,
-        end_notes: rec.endNotes,
+        initial_task: rec.initialTask || null,
+        current_activity: rec.currentActivity || null,
+        end_notes: rec.endNotes || null,
         updated_at: new Date().toISOString()
       });
-      return !error;
+      if (error) {
+        console.warn('Supabase upsertAttendanceRecord error:', error.message);
+        return false;
+      }
+      return true;
     } catch (e) {
+      console.error('Error in upsertAttendanceRecord:', e);
       return false;
     }
   }

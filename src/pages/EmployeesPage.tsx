@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
+import { supabaseDb } from '../services/supabaseDb';
 import { User, EmployeeType } from '../types';
 import { AddEmployeeModal } from '../components/modals/AddEmployeeModal';
 import { EmployeeDetailModal } from '../components/modals/EmployeeDetailModal';
@@ -38,6 +39,14 @@ export const EmployeesPage: React.FC = () => {
 
   useEffect(() => {
     fetchEmployees();
+    const interval = setInterval(fetchEmployees, 4000);
+    const subProfiles = supabaseDb.subscribeToTableChanges('profiles', () => {
+      fetchEmployees();
+    });
+    return () => {
+      clearInterval(interval);
+      subProfiles?.unsubscribe?.();
+    };
   }, [organization?.id]);
 
   const departments = Array.from(new Set(employees.map(e => e.department).filter(Boolean)));

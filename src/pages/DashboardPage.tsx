@@ -14,6 +14,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { useWorkClock } from '../context/WorkClockContext';
 import { api } from '../services/api';
+import { supabaseDb } from '../services/supabaseDb';
 import {
   TeamMemberStatus, LeaveRequest, AttendanceCorrectionRequest,
   AssignedTask, TaskPriority, TaskStatus, AttendanceRecord
@@ -135,12 +136,40 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
   useEffect(() => {
     if (isAdmin) {
       fetchAdminData();
-      const interval = setInterval(fetchAdminData, 4000);
-      return () => clearInterval(interval);
+      const interval = setInterval(fetchAdminData, 3000);
+      const subAtt = supabaseDb.subscribeToTableChanges('attendance_records', () => {
+        fetchAdminData();
+      });
+      const subProfiles = supabaseDb.subscribeToTableChanges('profiles', () => {
+        fetchAdminData();
+      });
+      const subLeaves = supabaseDb.subscribeToTableChanges('leave_requests', () => {
+        fetchAdminData();
+      });
+      const subCorrections = supabaseDb.subscribeToTableChanges('attendance_corrections', () => {
+        fetchAdminData();
+      });
+      return () => {
+        clearInterval(interval);
+        subAtt?.unsubscribe?.();
+        subProfiles?.unsubscribe?.();
+        subLeaves?.unsubscribe?.();
+        subCorrections?.unsubscribe?.();
+      };
     } else if (user) {
       fetchEmployeeData();
-      const interval = setInterval(fetchEmployeeData, 4000);
-      return () => clearInterval(interval);
+      const interval = setInterval(fetchEmployeeData, 3000);
+      const subAtt = supabaseDb.subscribeToTableChanges('attendance_records', () => {
+        fetchEmployeeData();
+      });
+      const subTasks = supabaseDb.subscribeToTableChanges('assigned_tasks', () => {
+        fetchEmployeeData();
+      });
+      return () => {
+        clearInterval(interval);
+        subAtt?.unsubscribe?.();
+        subTasks?.unsubscribe?.();
+      };
     }
   }, [isAdmin, user?.id, organization?.id]);
 

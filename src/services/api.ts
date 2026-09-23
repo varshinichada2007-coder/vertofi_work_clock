@@ -402,12 +402,49 @@ export const api = {
     activeClockState: ReturnType<typeof storage.getActiveClockState>;
     attendanceRecord?: AttendanceRecord;
   }> {
-    const activeClockState = storage.getActiveClockState(userId);
     const user = storage.getUserById(userId);
     const orgId = user?.organizationId || storage.getCurrentOrgId();
     const todayStr = new Date().toISOString().split('T')[0];
-    const records = storage.getAttendanceRecords(orgId);
+
+    // Fetch fresh cloud records from Supabase
+    let records = storage.getAttendanceRecords(orgId);
+    try {
+      const remote = await supabaseDb.getAttendanceRecords(orgId);
+      if (remote !== null) {
+        storage.setAttendanceRecords(remote);
+        records = remote;
+      }
+    } catch (e) {
+      console.warn('Supabase sync in getTodayAttendance:', e);
+    }
+
     const todayRecord = records.find(r => r.userId === userId && r.date === todayStr);
+    let activeClockState = storage.getActiveClockState(userId);
+
+    if (todayRecord) {
+      let status: EmployeeStatus = 'NOT_CLOCKED_IN';
+      if (todayRecord.clockOutTimestamp || (todayRecord.clockOut && todayRecord.clockOut !== '—')) {
+        status = 'CLOCKED_OUT';
+      } else if (todayRecord.status === 'ON_BREAK') {
+        status = 'ON_BREAK';
+      } else if (todayRecord.clockInTimestamp || (todayRecord.clockIn && todayRecord.clockIn !== '—')) {
+        status = 'WORKING';
+      }
+
+      activeClockState = {
+        status,
+        clockInTimestamp: todayRecord.clockInTimestamp || activeClockState.clockInTimestamp,
+        clockOutTimestamp: todayRecord.clockOutTimestamp || activeClockState.clockOutTimestamp,
+        accumulatedBreakSeconds: todayRecord.totalBreakSeconds || 0,
+        currentBreakStartTimestamp: status === 'ON_BREAK' ? (activeClockState.currentBreakStartTimestamp || Date.now()) : null,
+        currentBreakType: status === 'ON_BREAK' ? (activeClockState.currentBreakType || 'Personal') : null,
+        currentActivity: todayRecord.currentActivity || todayRecord.initialTask || 'Working',
+        initialTask: todayRecord.initialTask || 'Work Shift',
+        attendanceId: todayRecord.id,
+        todayDateStr: todayStr
+      };
+      storage.setActiveClockState(userId, activeClockState);
+    }
 
     return { activeClockState, attendanceRecord: todayRecord };
   },
@@ -479,7 +516,12 @@ export const api = {
     };
 
     storage.saveAttendanceRecord(attendanceRecord);
-    supabaseDb.upsertAttendanceRecord(attendanceRecord).catch(e => console.warn('Supabase clockIn err:', e));
+    try {
+      await supabaseDb.upsertProfile(user);
+      await supabaseDb.upsertAttendanceRecord(attendanceRecord);
+    } catch (e) {
+      console.warn('Supabase clockIn sync warning:', e);
+    }
 
     const initialSession: WorkSession = {
       id: `ses_${Date.now()}`,
@@ -585,7 +627,11 @@ export const api = {
         notes
       };
       storage.saveBreakRecord(breakRec);
-      supabaseDb.upsertBreakRecord(breakRec).catch(e => console.warn('Supabase startBreak err:', e));
+      try {
+        await supabaseDb.upsertBreakRecord(breakRec);
+      } catch (e) {
+        console.warn('Supabase break record warning:', e);
+      }
 
       // Update today's attendance record status
       const records = storage.getAttendanceRecords(orgId);
@@ -595,7 +641,11 @@ export const api = {
         todayRecord.completionStatus = 'On Break';
         todayRecord.updatedAt = now.toISOString();
         storage.saveAttendanceRecord(todayRecord);
-        supabaseDb.upsertAttendanceRecord(todayRecord).catch(e => console.warn('Supabase startBreak att err:', e));
+        try {
+          await supabaseDb.upsertAttendanceRecord(todayRecord);
+        } catch (e) {
+          console.warn('Supabase attendance status warning:', e);
+        }
       }
     }
 
@@ -650,7 +700,11 @@ export const api = {
       activeBreak.endTime = now.toISOString();
       activeBreak.durationSeconds = breakDurationSec;
       storage.saveBreakRecord(activeBreak);
-      supabaseDb.upsertBreakRecord(activeBreak).catch(e => console.warn('Supabase endBreak err:', e));
+      try {
+        await supabaseDb.upsertBreakRecord(activeBreak);
+      } catch (e) {
+        console.warn('Supabase endBreak break warning:', e);
+      }
     }
 
     const records = storage.getAttendanceRecords(orgId);
@@ -661,7 +715,11 @@ export const api = {
       todayRecord.completionStatus = 'Working';
       todayRecord.updatedAt = now.toISOString();
       storage.saveAttendanceRecord(todayRecord);
-      supabaseDb.upsertAttendanceRecord(todayRecord).catch(e => console.warn('Supabase endBreak att err:', e));
+      try {
+        await supabaseDb.upsertAttendanceRecord(todayRecord);
+      } catch (e) {
+        console.warn('Supabase endBreak att warning:', e);
+      }
     }
 
     storage.addTimelineEvent(userId, {
@@ -737,7 +795,11 @@ export const api = {
       todayRecord.endNotes = endNotes;
       todayRecord.updatedAt = now.toISOString();
       storage.saveAttendanceRecord(todayRecord);
-      supabaseDb.upsertAttendanceRecord(todayRecord).catch(e => console.warn('Supabase clockOut err:', e));
+      try {
+        await supabaseDb.upsertAttendanceRecord(todayRecord);
+      } catch (e) {
+        console.warn('Supabase clockOut warning:', e);
+      }
     }
 
     const sessions = storage.getWorkSessions(orgId);
@@ -887,43 +949,55 @@ export const api = {
     const attendanceRecords = storage.getAttendanceRecords(targetOrg);
 
     return employees.map(user => {
-      const clockState = storage.getActiveClockState(user.id);
       const attToday = attendanceRecords.find(r => r.date === todayStr && r.userId === user.id);
+      const clockState = storage.getActiveClockState(user.id);
 
-      let effectiveStatus: EmployeeStatus = clockState.status;
-      let effectiveActivity = clockState.currentActivity;
-      let effectiveClockInTs = clockState.clockInTimestamp;
-      let effectiveClockOutTs = clockState.clockOutTimestamp;
+      let effectiveStatus: EmployeeStatus = 'NOT_CLOCKED_IN';
+      let effectiveActivity = 'Not clocked in';
+      let effectiveClockInTs: number | null = null;
+      let effectiveClockOutTs: number | null = null;
+      let totalBreak = 0;
 
       if (attToday) {
-        if (attToday.clockOutTimestamp) {
+        effectiveClockInTs = attToday.clockInTimestamp || (attToday.clockIn && attToday.clockIn !== '—' ? clockState.clockInTimestamp : null);
+        effectiveClockOutTs = attToday.clockOutTimestamp || (attToday.clockOut && attToday.clockOut !== '—' ? clockState.clockOutTimestamp : null);
+        totalBreak = attToday.totalBreakSeconds || 0;
+        effectiveActivity = attToday.currentActivity || attToday.initialTask || 'Working';
+
+        if (attToday.clockOutTimestamp || (attToday.clockOut && attToday.clockOut !== '—')) {
           effectiveStatus = 'CLOCKED_OUT';
         } else if (attToday.status === 'ON_BREAK') {
           effectiveStatus = 'ON_BREAK';
-        } else if (attToday.clockInTimestamp) {
+          if (clockState.currentBreakStartTimestamp) {
+            totalBreak += Math.floor((Date.now() - clockState.currentBreakStartTimestamp) / 1000);
+          }
+        } else if (attToday.clockInTimestamp || (attToday.clockIn && attToday.clockIn !== '—') || attToday.status === 'WORKING' || attToday.status === 'LATE' || attToday.status === 'PRESENT') {
           effectiveStatus = 'WORKING';
+        } else if (attToday.status === 'LEAVE') {
+          effectiveStatus = 'NOT_CLOCKED_IN';
+          effectiveActivity = 'On Approved Leave';
         }
-        effectiveActivity = attToday.currentActivity || attToday.initialTask || 'No active task';
-        effectiveClockInTs = attToday.clockInTimestamp || effectiveClockInTs;
-        effectiveClockOutTs = attToday.clockOutTimestamp || effectiveClockOutTs;
+      } else if (clockState && clockState.todayDateStr === todayStr && clockState.status !== 'NOT_CLOCKED_IN') {
+        // Fallback to local clock state if on the same browser
+        effectiveStatus = clockState.status;
+        effectiveActivity = clockState.currentActivity;
+        effectiveClockInTs = clockState.clockInTimestamp;
+        effectiveClockOutTs = clockState.clockOutTimestamp;
+        totalBreak = clockState.accumulatedBreakSeconds || 0;
+        if (effectiveStatus === 'ON_BREAK' && clockState.currentBreakStartTimestamp) {
+          totalBreak += Math.floor((Date.now() - clockState.currentBreakStartTimestamp) / 1000);
+        }
       }
 
       let totalWork = 0;
-      let totalBreak = attToday ? attToday.totalBreakSeconds : clockState.accumulatedBreakSeconds;
-
-      if (effectiveStatus === 'ON_BREAK' && clockState.currentBreakStartTimestamp) {
-        const liveBreakSec = Math.floor((Date.now() - clockState.currentBreakStartTimestamp) / 1000);
-        totalBreak += liveBreakSec;
-      }
-
       if (effectiveClockInTs) {
         const nowMs = Date.now();
         const endMs = effectiveClockOutTs || nowMs;
         const totalElapsed = Math.floor((endMs - effectiveClockInTs) / 1000);
         totalWork = Math.max(0, totalElapsed - totalBreak);
       } else if (attToday) {
-        totalWork = attToday.netWorkSeconds;
-        totalBreak = attToday.totalBreakSeconds;
+        totalWork = attToday.netWorkSeconds || 0;
+        totalBreak = attToday.totalBreakSeconds || 0;
       }
 
       const remainingBreakSec = Math.max(0, MAX_DAILY_BREAK_SECONDS - totalBreak);
@@ -931,7 +1005,7 @@ export const api = {
 
       const clockInFormatted = effectiveClockInTs
         ? new Date(effectiveClockInTs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-        : (attToday ? attToday.clockIn : undefined);
+        : (attToday?.clockIn && attToday.clockIn !== '—' ? attToday.clockIn : undefined);
 
       let breakStartedFormatted: string | undefined = undefined;
       if (effectiveStatus === 'ON_BREAK' && clockState.currentBreakStartTimestamp) {
