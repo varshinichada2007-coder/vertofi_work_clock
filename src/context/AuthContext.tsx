@@ -73,12 +73,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           console.warn('Initial Supabase sync notice:', dbErr);
         }
 
-        const currentUser = storage.getCurrentUser();
-        if (currentUser && isMounted) {
-          setUser(currentUser);
-          setRole(currentUser.role);
-          const orgUsers = storage.getUsers(currentUser.organizationId);
-          setUsers(orgUsers);
+        // Check if there is an active session in sessionStorage
+        const activeSessionId = sessionStorage.getItem('vertofi_active_user_session');
+        if (activeSessionId && isMounted) {
+          const remoteUsers = await supabaseDb.getProfiles();
+          const found = remoteUsers?.find(u => u.id === activeSessionId) || storage.getUserById(activeSessionId);
+          if (found) {
+            setUser(found);
+            setRole(found.role);
+          } else {
+            setUser(null);
+          }
+        } else {
+          // ALWAYS default to null on fresh open so Login Page appears!
+          setUser(null);
         }
       } finally {
         if (isMounted) {
@@ -104,6 +112,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsLoading(true);
     try {
       const loggedUser = await api.login(email, password, secretCode);
+      sessionStorage.setItem('vertofi_active_user_session', loggedUser.id);
       setUser(loggedUser);
       setRole(loggedUser.role);
       const org = storage.getCurrentOrganization();
@@ -118,6 +127,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const logout = async () => {
     setIsLoading(true);
     try {
+      sessionStorage.removeItem('vertofi_active_user_session');
       await api.logout();
       setUser(null);
     } finally {

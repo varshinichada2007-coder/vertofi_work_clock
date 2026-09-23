@@ -65,6 +65,11 @@ class StorageService {
       console.warn('Legacy storage cleanup warning:', e);
     }
 
+    // Always remove any persistent current user id from localStorage so the login page appears on refresh/startup
+    try {
+      localStorage.removeItem(STORAGE_KEYS.CURRENT_USER_ID);
+    } catch {}
+
     const isSeeded = localStorage.getItem(STORAGE_KEYS.SEED_FLAG);
     if (!isSeeded) {
       try {
@@ -182,14 +187,23 @@ class StorageService {
   }
 
   getCurrentUserId(): string | null {
-    return localStorage.getItem(STORAGE_KEYS.CURRENT_USER_ID);
+    try {
+      return sessionStorage.getItem('vertofi_active_user_session');
+    } catch {
+      return null;
+    }
   }
 
   setCurrentUserId(id: string | null): void {
-    if (id === null) {
+    try {
       localStorage.removeItem(STORAGE_KEYS.CURRENT_USER_ID);
-    } else {
-      localStorage.setItem(STORAGE_KEYS.CURRENT_USER_ID, id);
+      if (id === null) {
+        sessionStorage.removeItem('vertofi_active_user_session');
+      } else {
+        sessionStorage.setItem('vertofi_active_user_session', id);
+      }
+    } catch (e) {
+      console.warn('Storage session update error:', e);
     }
   }
 
