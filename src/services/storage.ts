@@ -12,24 +12,24 @@ import {
 } from './mockData';
 
 const STORAGE_KEYS = {
-  ORGANIZATIONS: 'vertofi_organizations_v8',
-  CURRENT_ORG_ID: 'vertofi_current_org_id_v8',
-  USERS: 'vertofi_users_v8',
-  CURRENT_USER_ID: 'vertofi_current_user_id_v8',
-  ATTENDANCE: 'vertofi_attendance_v8',
-  BREAKS: 'vertofi_breaks_v8',
-  SESSIONS: 'vertofi_sessions_v8',
-  ACTIVITIES: 'vertofi_activities_v8',
-  LEAVE_REQUESTS: 'vertofi_leaves_v8',
-  CORRECTIONS: 'vertofi_corrections_v8',
-  AUDIT_LOGS: 'vertofi_audit_logs_v8',
-  NOTIFICATIONS: 'vertofi_notifications_v8',
-  SCHEDULES: 'vertofi_schedules_v8',
-  SETTINGS: 'vertofi_settings_v8',
-  ASSIGNED_TASKS: 'vertofi_assigned_tasks_v8',
-  ACTIVE_CLOCK_PREFIX: 'vertofi_active_clock_v8_',
-  TIMELINE_PREFIX: 'vertofi_timeline_v8_',
-  SEED_FLAG: 'vertofi_seeded_v8'
+  ORGANIZATIONS: 'vertofi_organizations_v9',
+  CURRENT_ORG_ID: 'vertofi_current_org_id_v9',
+  USERS: 'vertofi_users_v9',
+  CURRENT_USER_ID: 'vertofi_current_user_id_v9',
+  ATTENDANCE: 'vertofi_attendance_v9',
+  BREAKS: 'vertofi_breaks_v9',
+  SESSIONS: 'vertofi_sessions_v9',
+  ACTIVITIES: 'vertofi_activities_v9',
+  LEAVE_REQUESTS: 'vertofi_leaves_v9',
+  CORRECTIONS: 'vertofi_corrections_v9',
+  AUDIT_LOGS: 'vertofi_audit_logs_v9',
+  NOTIFICATIONS: 'vertofi_notifications_v9',
+  SCHEDULES: 'vertofi_schedules_v9',
+  SETTINGS: 'vertofi_settings_v9',
+  ASSIGNED_TASKS: 'vertofi_assigned_tasks_v9',
+  ACTIVE_CLOCK_PREFIX: 'vertofi_active_clock_v9_',
+  TIMELINE_PREFIX: 'vertofi_timeline_v9_',
+  SEED_FLAG: 'vertofi_seeded_v9'
 };
 
 export interface ActiveClockState {
@@ -51,12 +51,12 @@ class StorageService {
   }
 
   private initStorage() {
-    // Clean up all legacy mock data keys from older storage versions (v1 to v7)
+    // Clean up all legacy mock data keys from older storage versions (v1 to v8)
     try {
       const keysToRemove: string[] = [];
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
-        if (key && (key.startsWith('vertofi_') && !key.includes('_v8'))) {
+        if (key && (key.startsWith('vertofi_') && !key.includes('_v9'))) {
           keysToRemove.push(key);
         }
       }
@@ -71,7 +71,8 @@ class StorageService {
         localStorage.setItem(STORAGE_KEYS.ORGANIZATIONS, JSON.stringify(DEFAULT_ORGANIZATIONS));
         localStorage.setItem(STORAGE_KEYS.CURRENT_ORG_ID, 'org_vertofi');
         localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(INITIAL_USERS));
-        localStorage.setItem(STORAGE_KEYS.CURRENT_USER_ID, 'f45bd396-988c-4f4a-8c85-f203722a1d41');
+        // NOTE: We do NOT seed CURRENT_USER_ID here so the Login Page is always shown initially!
+        localStorage.removeItem(STORAGE_KEYS.CURRENT_USER_ID);
         localStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify([]));
         localStorage.setItem(STORAGE_KEYS.BREAKS, JSON.stringify([]));
         localStorage.setItem(STORAGE_KEYS.SESSIONS, JSON.stringify([]));

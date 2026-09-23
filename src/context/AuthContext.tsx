@@ -10,7 +10,7 @@ interface AuthContextType {
   users: User[];
   organization: Organization;
   organizations: Organization[];
-  login: (email: string, password?: string) => Promise<User>;
+  login: (email: string, password?: string, secretCode?: string) => Promise<User>;
   logout: () => Promise<void>;
   switchOrganization: (orgId: string) => Promise<void>;
   addEmployee: (params: AddEmployeeParams) => Promise<User>;
@@ -100,10 +100,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, []);
 
-  const login = async (email: string, password?: string): Promise<User> => {
+  const login = async (email: string, password?: string, secretCode?: string): Promise<User> => {
     setIsLoading(true);
     try {
-      const loggedUser = await api.login(email, password);
+      const loggedUser = await api.login(email, password, secretCode);
       setUser(loggedUser);
       setRole(loggedUser.role);
       const org = storage.getCurrentOrganization();

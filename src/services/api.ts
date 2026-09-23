@@ -29,7 +29,7 @@ export const MAX_DAILY_BREAK_SECONDS = 3600; // 60 minutes break cap
 
 export const api = {
   // --- Authentication ---
-  async login(email: string, password?: string): Promise<User> {
+  async login(email: string, password?: string, secretCode?: string): Promise<User> {
     const trimmedEmail = email.trim().toLowerCase();
     if (!password) {
       throw new Error('Password is required.');
@@ -55,6 +55,17 @@ export const api = {
 
     if (found.status === 'DEACTIVATED') {
       throw new Error('This account has been deactivated. Please contact your organization administrator.');
+    }
+
+    // Admin Secret Code verification for Administrator access
+    if (found.role === 'ADMIN') {
+      const trimmedSecret = secretCode?.trim();
+      if (!trimmedSecret) {
+        throw new Error('Admin Secret Code is required to access the Admin Portal.');
+      }
+      if (trimmedSecret !== 'Goutham01') {
+        throw new Error('Invalid Admin Secret Code. Access to Admin Portal denied.');
+      }
     }
 
     if (found.password && password && found.password !== password) {
