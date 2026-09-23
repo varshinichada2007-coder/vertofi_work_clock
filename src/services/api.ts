@@ -625,60 +625,86 @@ export const api = {
     const user = storage.getUserById(userId);
     if (!user) throw new Error('User not found.');
     const orgId = user.organizationId;
+    const todayStr = new Date().toISOString().split('T')[0];
+    const now = new Date();
+    const nowMs = now.getTime();
+    const timeFormatted = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
-    const currentState = storage.getActiveClockState(userId);
+    // 1. Fetch latest attendance records from Supabase / storage
+    let records = storage.getAttendanceRecords(orgId);
+    let todayRecord = records.find(r => 
+      (r.userId === userId || r.userId === user.employeeId) && 
+      (r.date === todayStr || (r.clockInTimestamp && (nowMs - Number(r.clockInTimestamp)) < 24 * 3600 * 1000))
+    );
+
+    if (!todayRecord) {
+      try {
+        const remote = await supabaseDb.getAttendanceRecords(orgId);
+        if (remote) {
+          storage.setAttendanceRecords(remote);
+          todayRecord = remote.find(r => 
+            (r.userId === userId || r.userId === user.employeeId) && 
+            (r.date === todayStr || (r.clockInTimestamp && (nowMs - Number(r.clockInTimestamp)) < 24 * 3600 * 1000))
+          );
+        }
+      } catch (e) {
+        console.warn('Supabase fetch in startBreak:', e);
+      }
+    }
+
+    let currentState = storage.getActiveClockState(userId);
+
+    // Reconcile status if clocked in on another device
+    if (todayRecord && (todayRecord.clockInTimestamp || (todayRecord.clockIn && todayRecord.clockIn !== '—'))) {
+      if (!todayRecord.clockOutTimestamp && (!todayRecord.clockOut || todayRecord.clockOut === '—')) {
+        currentState = {
+          ...currentState,
+          status: 'WORKING',
+          clockInTimestamp: todayRecord.clockInTimestamp ? Number(todayRecord.clockInTimestamp) : currentState.clockInTimestamp,
+          attendanceId: todayRecord.id,
+          accumulatedBreakSeconds: todayRecord.totalBreakSeconds || currentState.accumulatedBreakSeconds || 0
+        };
+      }
+    }
+
     if (currentState.status !== 'WORKING') {
-      throw new Error('You can only take a break while in WORKING status.');
+      throw new Error('You must be clocked in to take a break.');
     }
 
     if (currentState.accumulatedBreakSeconds >= MAX_DAILY_BREAK_SECONDS) {
       throw new Error('Your 1-hour daily break allowance has been fully used.');
     }
 
-    const now = new Date();
-    const nowMs = now.getTime();
-    const timeFormatted = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const attendanceId = todayRecord?.id || currentState.attendanceId || `att_${todayStr}_${userId}`;
 
     const newState = {
       ...currentState,
       status: 'ON_BREAK' as EmployeeStatus,
+      attendanceId,
       currentBreakStartTimestamp: nowMs,
       currentBreakType: breakType
     };
     storage.setActiveClockState(userId, newState);
 
-    if (currentState.attendanceId) {
-      const breakRec: BreakRecord = {
-        id: `brk_${Date.now()}`,
-        organizationId: orgId,
-        attendanceId: currentState.attendanceId,
-        userId,
-        breakType,
-        startTime: now.toISOString(),
-        durationSeconds: 0,
-        notes
-      };
-      storage.saveBreakRecord(breakRec);
-      try {
-        await supabaseDb.upsertBreakRecord(breakRec);
-      } catch (e) {
-        console.warn('Supabase break record warning:', e);
-      }
+    const breakRec: BreakRecord = {
+      id: `brk_${Date.now()}`,
+      organizationId: orgId,
+      attendanceId,
+      userId,
+      breakType,
+      startTime: now.toISOString(),
+      durationSeconds: 0,
+      notes: notes || undefined
+    };
+    storage.saveBreakRecord(breakRec);
+    supabaseDb.upsertBreakRecord(breakRec).catch(e => console.warn('Supabase break record warning:', e));
 
-      // Update today's attendance record status
-      const records = storage.getAttendanceRecords(orgId);
-      const todayRecord = records.find(r => r.id === currentState.attendanceId);
-      if (todayRecord) {
-        todayRecord.status = 'ON_BREAK';
-        todayRecord.completionStatus = 'On Break';
-        todayRecord.updatedAt = now.toISOString();
-        storage.saveAttendanceRecord(todayRecord);
-        try {
-          await supabaseDb.upsertAttendanceRecord(todayRecord);
-        } catch (e) {
-          console.warn('Supabase attendance status warning:', e);
-        }
-      }
+    if (todayRecord) {
+      todayRecord.status = 'ON_BREAK';
+      todayRecord.completionStatus = 'On Break';
+      todayRecord.updatedAt = now.toISOString();
+      storage.saveAttendanceRecord(todayRecord);
+      supabaseDb.upsertAttendanceRecord(todayRecord).catch(e => console.warn('Supabase attendance status warning:', e));
     }
 
     storage.addTimelineEvent(userId, {
@@ -702,20 +728,15 @@ export const api = {
     const user = storage.getUserById(userId);
     if (!user) throw new Error('User not found.');
     const orgId = user.organizationId;
-
-    const currentState = storage.getActiveClockState(userId);
-    if (currentState.status !== 'ON_BREAK' || !currentState.currentBreakStartTimestamp) {
-      throw new Error('You are not currently on a break.');
-    }
-
+    const todayStr = new Date().toISOString().split('T')[0];
     const now = new Date();
     const nowMs = now.getTime();
-    const breakDurationSec = Math.floor((nowMs - currentState.currentBreakStartTimestamp) / 1000);
-    const newAccumulatedBreak = currentState.accumulatedBreakSeconds + breakDurationSec;
     const timeFormatted = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
-    const remainingBreakSec = Math.max(0, MAX_DAILY_BREAK_SECONDS - newAccumulatedBreak);
-    const remainingMins = Math.floor(remainingBreakSec / 60);
+    let currentState = storage.getActiveClockState(userId);
+    const breakStartMs = currentState.currentBreakStartTimestamp || (nowMs - 60000);
+    const breakDurationSec = Math.max(0, Math.floor((nowMs - breakStartMs) / 1000));
+    const newAccumulatedBreak = (currentState.accumulatedBreakSeconds || 0) + breakDurationSec;
 
     const newState = {
       ...currentState,
@@ -732,27 +753,25 @@ export const api = {
       activeBreak.endTime = now.toISOString();
       activeBreak.durationSeconds = breakDurationSec;
       storage.saveBreakRecord(activeBreak);
-      try {
-        await supabaseDb.upsertBreakRecord(activeBreak);
-      } catch (e) {
-        console.warn('Supabase endBreak break warning:', e);
-      }
+      supabaseDb.upsertBreakRecord(activeBreak).catch(e => console.warn('Supabase endBreak break warning:', e));
     }
 
     const records = storage.getAttendanceRecords(orgId);
-    const todayRecord = records.find(r => r.id === currentState.attendanceId);
+    const todayRecord = records.find(r => 
+      (r.userId === userId || r.userId === user.employeeId) && 
+      (r.date === todayStr || (r.clockInTimestamp && (nowMs - Number(r.clockInTimestamp)) < 24 * 3600 * 1000))
+    );
     if (todayRecord) {
       todayRecord.totalBreakSeconds = newAccumulatedBreak;
       todayRecord.status = 'WORKING';
       todayRecord.completionStatus = 'Working';
       todayRecord.updatedAt = now.toISOString();
       storage.saveAttendanceRecord(todayRecord);
-      try {
-        await supabaseDb.upsertAttendanceRecord(todayRecord);
-      } catch (e) {
-        console.warn('Supabase endBreak att warning:', e);
-      }
+      supabaseDb.upsertAttendanceRecord(todayRecord).catch(e => console.warn('Supabase endBreak att warning:', e));
     }
+
+    const remainingBreakSec = Math.max(0, MAX_DAILY_BREAK_SECONDS - newAccumulatedBreak);
+    const remainingMins = Math.floor(remainingBreakSec / 60);
 
     storage.addTimelineEvent(userId, {
       organizationId: orgId,

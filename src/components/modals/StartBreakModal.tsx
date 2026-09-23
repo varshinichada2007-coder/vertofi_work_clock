@@ -7,12 +7,18 @@ export const StartBreakModal: React.FC = () => {
   const { isStartBreakModalOpen, setIsStartBreakModalOpen, startBreak } = useWorkClock();
   const [breakType, setBreakType] = useState<BreakType>('Lunch');
   const [notes, setNotes] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (!isStartBreakModalOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    startBreak(breakType, notes.trim() || undefined);
+    setIsSubmitting(true);
+    try {
+      await startBreak(breakType, notes.trim() || undefined);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const breakOptions: { type: BreakType; icon: string; desc: string }[] = [
