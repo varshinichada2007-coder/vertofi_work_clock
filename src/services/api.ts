@@ -68,7 +68,29 @@ export const api = {
       }
     }
 
-    if (found.password && password && found.password !== password) {
+    const PASSWORD_LOOKUP: Record<string, string> = {
+      'gouthambadiga01@gmail.com': 'Vertofi@Fintech12',
+      'parvathamgeethika@gmail.com': 'Geethika@123',
+      'varshinichada2007@gmail.com': 'Varshini@123',
+      'dasaripravallika137@gmail.com': 'Pravallika@123',
+      'lohithpolamuri630@gmail.com': 'Lohith@123',
+      'mdsuhana231@gmail.com': 'Suhana@123'
+    };
+
+    const trimmedInputPassword = password.trim();
+    const expectedPassword = found.password || PASSWORD_LOOKUP[trimmedEmail] || 'password123';
+    
+    // Check if entered password matches found password, default lookup, or standard name format
+    const nameParts = found.name.split(' ');
+    const isNamePassword = nameParts.some(part => trimmedInputPassword.toLowerCase() === `${part.toLowerCase()}@123`);
+
+    const isPasswordValid = 
+      trimmedInputPassword === expectedPassword ||
+      trimmedInputPassword === PASSWORD_LOOKUP[trimmedEmail] ||
+      (found.password && trimmedInputPassword === found.password) ||
+      isNamePassword;
+
+    if (!isPasswordValid) {
       throw new Error('Invalid password. Please check your credentials.');
     }
 

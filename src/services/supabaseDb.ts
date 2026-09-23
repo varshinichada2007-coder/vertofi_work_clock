@@ -116,26 +116,39 @@ export class SupabaseDbService {
         console.error('Supabase getProfiles error:', error?.message);
         return null;
       }
-      return data.map(p => ({
-        id: p.id,
-        organizationId: 'org_vertofi',
-        name: p.name,
-        email: p.email,
-        password: p.email === 'gouthambadiga01@gmail.com' ? 'Vertofi@Fintech12' : (p.name.split(' ')[0] + '@123'),
-        employeeId: p.employee_id,
-        department: p.department,
-        designation: p.designation,
-        role: p.role,
-        employeeType: p.employee_type || 'Employee',
-        joiningDate: p.joining_date,
-        profileImage: p.profile_image || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(p.name)}`,
-        workLocation: p.work_location || 'Work From Home',
-        phone: p.phone || '+91 98765 43210',
-        managerName: p.manager_name || 'Goutham Badiga (Admin)',
-        status: 'ACTIVE',
-        createdAt: p.created_at,
-        updatedAt: p.updated_at
-      }));
+      const PASSWORD_LOOKUP: Record<string, string> = {
+        'gouthambadiga01@gmail.com': 'Vertofi@Fintech12',
+        'parvathamgeethika@gmail.com': 'Geethika@123',
+        'varshinichada2007@gmail.com': 'Varshini@123',
+        'dasaripravallika137@gmail.com': 'Pravallika@123',
+        'lohithpolamuri630@gmail.com': 'Lohith@123',
+        'mdsuhana231@gmail.com': 'Suhana@123'
+      };
+
+      return data.map(p => {
+        const emailLower = (p.email || '').toLowerCase().trim();
+        const fallbackPw = PASSWORD_LOOKUP[emailLower] || (p.name ? p.name.split(' ').pop() + '@123' : 'password123');
+        return {
+          id: p.id,
+          organizationId: 'org_vertofi',
+          name: p.name,
+          email: p.email,
+          password: PASSWORD_LOOKUP[emailLower] || fallbackPw,
+          employeeId: p.employee_id,
+          department: p.department,
+          designation: p.designation,
+          role: p.role,
+          employeeType: p.employee_type || 'Employee',
+          joiningDate: p.joining_date,
+          profileImage: p.profile_image || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(p.name)}`,
+          workLocation: p.work_location || 'Work From Home',
+          phone: p.phone || '+91 98765 43210',
+          managerName: p.manager_name || 'Goutham Badiga (Admin)',
+          status: 'ACTIVE',
+          createdAt: p.created_at,
+          updatedAt: p.updated_at
+        };
+      });
     } catch (e) {
       console.error('Error in getProfiles from Supabase:', e);
       return null;

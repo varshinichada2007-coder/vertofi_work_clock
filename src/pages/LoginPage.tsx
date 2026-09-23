@@ -336,14 +336,66 @@ export const LoginPage: React.FC = () => {
                 )}
               </button>
 
+              {/* Quick Fill Credentials */}
+              <div className="pt-3 border-t border-slate-100 space-y-2">
+                <div className="flex items-center justify-between text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                  <span>Quick Sign-In (1-Click Fill)</span>
+                </div>
+                {activeTab === 'admin' ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEmail('gouthambadiga01@gmail.com');
+                      setPassword('Vertofi@Fintech12');
+                      setSecretCode('Goutham01');
+                      setErrorMsg(null);
+                    }}
+                    className="w-full text-left p-2 rounded-lg bg-rose-50/70 hover:bg-rose-100 border border-rose-200 transition-colors flex items-center justify-between group cursor-pointer"
+                  >
+                    <div>
+                      <p className="text-xs font-bold text-rose-900">Goutham Badiga (Admin)</p>
+                      <p className="text-[10px] text-rose-600 font-mono">gouthambadiga01@gmail.com • Code: Goutham01</p>
+                    </div>
+                    <span className="text-[10px] font-bold text-rose-700 bg-white px-2 py-0.5 rounded border border-rose-300">Fill</span>
+                  </button>
+                ) : (
+                  <div className="grid grid-cols-1 gap-1.5 max-h-36 overflow-y-auto pr-1">
+                    {[
+                      { name: 'Parvatham Geethika', email: 'parvathamgeethika@gmail.com', pw: 'Geethika@123' },
+                      { name: 'Varshini Chada', email: 'varshinichada2007@gmail.com', pw: 'Varshini@123' },
+                      { name: 'Dasari Pravallika', email: 'dasaripravallika137@gmail.com', pw: 'Pravallika@123' },
+                      { name: 'Polamuri Lohith', email: 'lohithpolamuri630@gmail.com', pw: 'Lohith@123' },
+                      { name: 'Mohammad Suhana', email: 'mdsuhana231@gmail.com', pw: 'Suhana@123' }
+                    ].map(emp => (
+                      <button
+                        key={emp.email}
+                        type="button"
+                        onClick={() => {
+                          setEmail(emp.email);
+                          setPassword(emp.pw);
+                          setErrorMsg(null);
+                        }}
+                        className="text-left p-1.5 rounded-lg bg-slate-50 hover:bg-blue-50 border border-slate-200 hover:border-blue-200 transition-colors flex items-center justify-between group cursor-pointer"
+                      >
+                        <div className="truncate mr-2">
+                          <p className="text-xs font-semibold text-slate-800 truncate">{emp.name}</p>
+                          <p className="text-[10px] text-slate-500 truncate">{emp.email}</p>
+                        </div>
+                        <span className="text-[10px] font-semibold text-blue-600 bg-white px-2 py-0.5 rounded border border-slate-200 shrink-0">Fill</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               {/* Policy & Security Notice */}
-              <div className="pt-3 border-t border-slate-100 flex items-start gap-2 text-[11px] text-slate-500 leading-relaxed bg-slate-50/80 p-3 rounded-xl border border-slate-100">
+              <div className="pt-2 flex items-start gap-2 text-[11px] text-slate-500 leading-relaxed bg-slate-50/80 p-2.5 rounded-xl border border-slate-100">
                 <Shield className="w-4 h-4 text-[#0066FF] shrink-0 mt-0.5" />
                 <span>
                   {activeTab === 'admin' ? (
-                    <><strong>Restricted Area:</strong> This portal is exclusively for System Administrators. Unauthorized access attempts are monitored and logged.</>
+                    <><strong>Restricted Area:</strong> This portal is exclusively for System Administrators. Requires master secret code.</>
                   ) : (
-                    <><strong>Employee Self-Service:</strong> Sign in with your registered Vertofi account to record daily clock-ins, shift breaks, and attendance logs.</>
+                    <><strong>Employee Portal:</strong> Clock in/out, view shift breaks, and check live attendance across all devices.</>
                   )}
                 </span>
               </div>
