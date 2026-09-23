@@ -12,9 +12,9 @@ export const DEFAULT_ORGANIZATIONS: Organization[] = [
     logo: '/logo.svg',
     timezone: 'Asia/Kolkata',
     currency: 'INR',
-    standardWorkHours: 8,
-    standardStartTime: '09:00',
-    standardEndTime: '17:30',
+    standardWorkHours: 7,
+    standardStartTime: '18:00',
+    standardEndTime: '01:00',
     lateGraceMinutes: 15,
     createdAt: '2026-01-01T00:00:00.000Z'
   }
@@ -23,24 +23,24 @@ export const DEFAULT_ORGANIZATIONS: Organization[] = [
 export const DEFAULT_WORK_SCHEDULE: WorkScheduleConfig = {
   organizationId: 'org_vertofi',
   schedules: [
-    { day: 'Monday', isWorkday: true, startTime: '09:00', endTime: '17:30', requiredHours: 8 },
-    { day: 'Tuesday', isWorkday: true, startTime: '09:00', endTime: '17:30', requiredHours: 8 },
-    { day: 'Wednesday', isWorkday: true, startTime: '09:00', endTime: '17:30', requiredHours: 8 },
-    { day: 'Thursday', isWorkday: true, startTime: '09:00', endTime: '17:30', requiredHours: 8 },
-    { day: 'Friday', isWorkday: true, startTime: '09:00', endTime: '17:30', requiredHours: 8 },
-    { day: 'Saturday', isWorkday: false, startTime: '09:00', endTime: '13:00', requiredHours: 0 },
-    { day: 'Sunday', isWorkday: false, startTime: '09:00', endTime: '13:00', requiredHours: 0 }
+    { day: 'Monday', isWorkday: true, startTime: '18:00', endTime: '01:00', requiredHours: 7 },
+    { day: 'Tuesday', isWorkday: true, startTime: '18:00', endTime: '01:00', requiredHours: 7 },
+    { day: 'Wednesday', isWorkday: true, startTime: '18:00', endTime: '01:00', requiredHours: 7 },
+    { day: 'Thursday', isWorkday: true, startTime: '18:00', endTime: '01:00', requiredHours: 7 },
+    { day: 'Friday', isWorkday: true, startTime: '18:00', endTime: '01:00', requiredHours: 7 },
+    { day: 'Saturday', isWorkday: false, startTime: '18:00', endTime: '22:00', requiredHours: 0 },
+    { day: 'Sunday', isWorkday: false, startTime: '18:00', endTime: '22:00', requiredHours: 0 }
   ],
   lateGraceMinutes: 15,
-  overtimeThresholdHours: 8,
+  overtimeThresholdHours: 7,
   maxBreakMinutes: 60
 };
 
 export const DEFAULT_SETTINGS: ReminderSettings = {
   clockInReminder: true,
-  clockInTime: '09:00',
+  clockInTime: '18:00',
   clockOutReminder: true,
-  clockOutTime: '18:00',
+  clockOutTime: '01:00',
   breakDurationWarning: true,
   maxBreakMinutes: 60,
   activityCheckIn: true,

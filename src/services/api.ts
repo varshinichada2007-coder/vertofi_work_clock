@@ -973,10 +973,15 @@ export const api = {
     ]);
     const employees = storage.getUsers(targetOrg).filter(u => u.role !== 'ADMIN');
     const todayStr = new Date().toISOString().split('T')[0];
+    const nowMs = Date.now();
     const attendanceRecords = storage.getAttendanceRecords(targetOrg);
 
     return employees.map(user => {
-      const attToday = attendanceRecords.find(r => r.date === todayStr && r.userId === user.id);
+      // Find today's record or the most recent punch within 24 hours
+      const attToday = attendanceRecords.find(r => 
+        (r.userId === user.id || r.userId === user.employeeId) &&
+        (r.date === todayStr || (r.clockInTimestamp && (nowMs - Number(r.clockInTimestamp)) < 24 * 3600 * 1000))
+      );
       const clockState = storage.getActiveClockState(user.id);
 
       let effectiveStatus: EmployeeStatus = 'NOT_CLOCKED_IN';
@@ -986,19 +991,31 @@ export const api = {
       let totalBreak = 0;
 
       if (attToday) {
-        effectiveClockInTs = attToday.clockInTimestamp || (attToday.clockIn && attToday.clockIn !== '—' ? clockState.clockInTimestamp : null);
-        effectiveClockOutTs = attToday.clockOutTimestamp || (attToday.clockOut && attToday.clockOut !== '—' ? clockState.clockOutTimestamp : null);
+        effectiveClockInTs = attToday.clockInTimestamp ? Number(attToday.clockInTimestamp) : (clockState.clockInTimestamp || null);
+        effectiveClockOutTs = attToday.clockOutTimestamp ? Number(attToday.clockOutTimestamp) : (clockState.clockOutTimestamp || null);
         totalBreak = attToday.totalBreakSeconds || 0;
         effectiveActivity = attToday.currentActivity || attToday.initialTask || 'Working';
 
-        if (attToday.clockOutTimestamp || (attToday.clockOut && attToday.clockOut !== '—')) {
+        const isClockedOut = Boolean(
+          effectiveClockOutTs ||
+          (attToday.clockOut && attToday.clockOut !== '—' && attToday.clockOut !== '') ||
+          attToday.completionStatus === '8 Hour Work Completed' ||
+          attToday.completionStatus === 'Workday Incomplete'
+        );
+
+        const isClockedIn = Boolean(
+          effectiveClockInTs ||
+          (attToday.clockIn && attToday.clockIn !== '—' && attToday.clockIn !== '')
+        );
+
+        if (isClockedOut) {
           effectiveStatus = 'CLOCKED_OUT';
         } else if (attToday.status === 'ON_BREAK') {
           effectiveStatus = 'ON_BREAK';
           if (clockState.currentBreakStartTimestamp) {
-            totalBreak += Math.floor((Date.now() - clockState.currentBreakStartTimestamp) / 1000);
+            totalBreak += Math.max(0, Math.floor((nowMs - clockState.currentBreakStartTimestamp) / 1000));
           }
-        } else if (attToday.clockInTimestamp || (attToday.clockIn && attToday.clockIn !== '—') || attToday.status === 'WORKING' || attToday.status === 'LATE' || attToday.status === 'PRESENT') {
+        } else if (isClockedIn || attToday.status === 'WORKING' || attToday.status === 'LATE' || attToday.status === 'PRESENT') {
           effectiveStatus = 'WORKING';
         } else if (attToday.status === 'LEAVE') {
           effectiveStatus = 'NOT_CLOCKED_IN';
@@ -1012,23 +1029,27 @@ export const api = {
         effectiveClockOutTs = clockState.clockOutTimestamp;
         totalBreak = clockState.accumulatedBreakSeconds || 0;
         if (effectiveStatus === 'ON_BREAK' && clockState.currentBreakStartTimestamp) {
-          totalBreak += Math.floor((Date.now() - clockState.currentBreakStartTimestamp) / 1000);
+          totalBreak += Math.max(0, Math.floor((nowMs - clockState.currentBreakStartTimestamp) / 1000));
         }
       }
 
       let totalWork = 0;
       if (effectiveClockInTs) {
-        const nowMs = Date.now();
-        const endMs = effectiveClockOutTs || nowMs;
-        const totalElapsed = Math.floor((endMs - effectiveClockInTs) / 1000);
-        totalWork = Math.max(0, totalElapsed - totalBreak);
+        if (effectiveStatus === 'WORKING' || effectiveStatus === 'ON_BREAK') {
+          const totalElapsed = Math.max(0, Math.floor((nowMs - effectiveClockInTs) / 1000));
+          totalWork = Math.max(0, totalElapsed - totalBreak);
+        } else if (effectiveStatus === 'CLOCKED_OUT') {
+          const endMs = effectiveClockOutTs || nowMs;
+          const totalElapsed = Math.max(0, Math.floor((endMs - effectiveClockInTs) / 1000));
+          totalWork = attToday?.netWorkSeconds || Math.max(0, totalElapsed - totalBreak);
+        }
       } else if (attToday) {
         totalWork = attToday.netWorkSeconds || 0;
         totalBreak = attToday.totalBreakSeconds || 0;
       }
 
       const remainingBreakSec = Math.max(0, MAX_DAILY_BREAK_SECONDS - totalBreak);
-      const overtimeSec = Math.max(0, totalWork - 28800);
+      const overtimeSec = Math.max(0, totalWork - 25200); // 7.0h shift threshold (6 PM - 1 AM)
 
       const clockInFormatted = effectiveClockInTs
         ? new Date(effectiveClockInTs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })

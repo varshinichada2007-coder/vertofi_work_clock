@@ -679,7 +679,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
                 </div>
                 <div className="flex items-center gap-1.5">
                   <span className="w-3 h-0.5 bg-slate-400 border-dashed" />
-                  <span>Standard Shift Target (8.0h)</span>
+                  <span>Standard Shift Target (7.0h • 6 PM - 1 AM)</span>
                 </div>
               </div>
               <span className="text-[11px] font-semibold text-emerald-600">● Real-time Live</span>
