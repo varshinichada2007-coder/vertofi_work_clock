@@ -449,8 +449,13 @@ export const api = {
     let activeClockState = storage.getActiveClockState(userId);
 
     if (todayRecord) {
+      const hasActualClockOut = Boolean(
+        (todayRecord.clockOutTimestamp && todayRecord.clockOutTimestamp > (todayRecord.clockInTimestamp || 0)) ||
+        (todayRecord.clockOut && todayRecord.clockOut !== '—' && todayRecord.clockOut !== '' && todayRecord.clockOut.trim().length > 0)
+      );
+
       let status: EmployeeStatus = 'NOT_CLOCKED_IN';
-      if (todayRecord.clockOutTimestamp || (todayRecord.clockOut && todayRecord.clockOut !== '—')) {
+      if (hasActualClockOut) {
         status = 'CLOCKED_OUT';
       } else if (todayRecord.status === 'ON_BREAK') {
         status = 'ON_BREAK';
@@ -461,7 +466,7 @@ export const api = {
       activeClockState = {
         status,
         clockInTimestamp: todayRecord.clockInTimestamp || activeClockState.clockInTimestamp,
-        clockOutTimestamp: todayRecord.clockOutTimestamp || activeClockState.clockOutTimestamp,
+        clockOutTimestamp: hasActualClockOut ? (todayRecord.clockOutTimestamp || activeClockState.clockOutTimestamp) : null,
         accumulatedBreakSeconds: todayRecord.totalBreakSeconds || 0,
         currentBreakStartTimestamp: status === 'ON_BREAK' ? (activeClockState.currentBreakStartTimestamp || Date.now()) : null,
         currentBreakType: status === 'ON_BREAK' ? (activeClockState.currentBreakType || 'Personal') : null,
@@ -992,23 +997,22 @@ export const api = {
 
       if (attToday) {
         effectiveClockInTs = attToday.clockInTimestamp ? Number(attToday.clockInTimestamp) : (clockState.clockInTimestamp || null);
-        effectiveClockOutTs = attToday.clockOutTimestamp ? Number(attToday.clockOutTimestamp) : (clockState.clockOutTimestamp || null);
+        
+        const hasActualClockOut = Boolean(
+          (attToday.clockOutTimestamp && Number(attToday.clockOutTimestamp) > (effectiveClockInTs || 0)) ||
+          (attToday.clockOut && attToday.clockOut !== '—' && attToday.clockOut !== '' && attToday.clockOut.trim().length > 0)
+        );
+
+        effectiveClockOutTs = hasActualClockOut ? (attToday.clockOutTimestamp ? Number(attToday.clockOutTimestamp) : null) : null;
         totalBreak = attToday.totalBreakSeconds || 0;
         effectiveActivity = attToday.currentActivity || attToday.initialTask || 'Working';
-
-        const isClockedOut = Boolean(
-          effectiveClockOutTs ||
-          (attToday.clockOut && attToday.clockOut !== '—' && attToday.clockOut !== '') ||
-          attToday.completionStatus === '8 Hour Work Completed' ||
-          attToday.completionStatus === 'Workday Incomplete'
-        );
 
         const isClockedIn = Boolean(
           effectiveClockInTs ||
           (attToday.clockIn && attToday.clockIn !== '—' && attToday.clockIn !== '')
         );
 
-        if (isClockedOut) {
+        if (hasActualClockOut) {
           effectiveStatus = 'CLOCKED_OUT';
         } else if (attToday.status === 'ON_BREAK') {
           effectiveStatus = 'ON_BREAK';
