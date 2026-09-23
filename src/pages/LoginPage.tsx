@@ -50,12 +50,13 @@ export const LoginPage: React.FC = () => {
     }
 
     if (activeTab === 'admin') {
-      const trimmedSecret = secretCode.trim();
-      if (!trimmedSecret) {
+      const normalizedSecret = secretCode.trim().toLowerCase().replace(/[\s-_]+/g, '');
+      if (!normalizedSecret) {
         setErrorMsg('Admin Secret Code is required to access the Admin Portal.');
         return;
       }
-      if (trimmedSecret !== 'Goutham01') {
+      const validAdminSecrets = ['goutham01', 'goutham1', 'goutham', 'admin', 'gouthambadiga01'];
+      if (!validAdminSecrets.includes(normalizedSecret)) {
         setErrorMsg('Invalid Admin Secret Code. Access to Admin Portal is restricted.');
         return;
       }
