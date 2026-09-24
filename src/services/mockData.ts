@@ -48,10 +48,10 @@ export const DEFAULT_SETTINGS: ReminderSettings = {
   use24HourClock: false,
   timezone: 'Asia/Kolkata',
   emailNotifications: true,
-  autoClockOutOnIdle: true,
-  idleTimeoutMinutes: 5,
-  autoClockOutOnScreenOff: true,
-  screenOffGraceSeconds: 10,
+  autoClockOutOnIdle: false,
+  idleTimeoutMinutes: 30,
+  autoClockOutOnScreenOff: false,
+  screenOffGraceSeconds: 60,
   idleWarningSeconds: 30
 };
 

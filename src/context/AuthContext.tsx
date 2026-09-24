@@ -60,24 +60,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const currentOrg = storage.getCurrentOrganization();
         setOrganization(currentOrg);
         setOrganizations(storage.getOrganizations());
+        const localUsers = storage.getUsers(currentOrg.id);
+        setUsers(localUsers);
 
-        // Sync fresh data from Supabase database
-        try {
-          await supabaseDb.checkAndSeedDefaults();
-          const remoteUsers = await supabaseDb.getProfiles();
-          if (remoteUsers && remoteUsers.length > 0 && isMounted) {
-            storage.setUsers(remoteUsers);
-            setUsers(remoteUsers.filter((u: User) => u.organizationId === currentOrg.id));
-          }
-        } catch (dbErr) {
-          console.warn('Initial Supabase sync notice:', dbErr);
-        }
-
-        // Check if there is an active session in sessionStorage
+        // Check active session in sessionStorage
         const activeSessionId = sessionStorage.getItem('vertofi_active_user_session');
         if (activeSessionId && isMounted) {
-          const remoteUsers = await supabaseDb.getProfiles();
-          const found = remoteUsers?.find(u => u.id === activeSessionId) || storage.getUserById(activeSessionId);
+          const found = storage.getUserById(activeSessionId);
           if (found) {
             setUser(found);
             setRole(found.role);
@@ -85,7 +74,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setUser(null);
           }
         } else {
-          // ALWAYS default to null on fresh open so Login Page appears!
           setUser(null);
         }
       } finally {
@@ -93,6 +81,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setIsLoading(false);
         }
       }
+
+      // Background cloud sync non-blocking
+      setTimeout(async () => {
+        if (!isMounted) return;
+        try {
+          await supabaseDb.checkAndSeedDefaults();
+          const remoteUsers = await supabaseDb.getProfiles();
+          if (remoteUsers && remoteUsers.length > 0 && isMounted) {
+            storage.setUsers(remoteUsers);
+            const currentOrg = storage.getCurrentOrganization();
+            setUsers(remoteUsers.filter((u: User) => u.organizationId === currentOrg.id));
+            const activeSessionId = sessionStorage.getItem('vertofi_active_user_session');
+            if (activeSessionId) {
+              const freshUser = remoteUsers.find(u => u.id === activeSessionId);
+              if (freshUser && isMounted) {
+                setUser(freshUser);
+                setRole(freshUser.role);
+              }
+            }
+          }
+        } catch (dbErr) {
+          console.warn('Background Supabase sync notice:', dbErr);
+        }
+      }, 50);
     };
 
     init();

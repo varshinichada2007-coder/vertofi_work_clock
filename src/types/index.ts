@@ -148,7 +148,7 @@ export interface AttendanceRecord {
   netWorkSeconds: number; // totalDuration - totalBreak
   overtimeSeconds: number; // netWork - standardRequired
   status: AttendanceStatusType;
-  completionStatus?: '8 Hour Work Completed' | 'Workday Incomplete' | 'Working' | 'On Break' | 'Not Started' | 'On Leave';
+  completionStatus?: string;
   isLate: boolean;
   lateMinutes: number;
   currentActivity?: string;

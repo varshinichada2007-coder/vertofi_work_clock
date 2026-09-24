@@ -27,6 +27,7 @@ interface WorkClockContextType {
 
   // Actions
   clockIn: (initialTask: string) => Promise<void>;
+  resumeClockIn: () => Promise<void>;
   startBreak: (breakType: BreakType, notes?: string) => Promise<void>;
   endBreak: () => Promise<void>;
   clockOut: (notes?: string) => Promise<void>;
@@ -289,7 +290,7 @@ export const WorkClockProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     day: 'numeric'
   });
 
-  // Calculate live work duration
+  // Calculate live work duration (capped at 10 hours)
   const calculateWorkSeconds = (): number => {
     if (clockState.status === 'NOT_CLOCKED_IN' || !clockState.clockInTimestamp) {
       return 0;
@@ -305,7 +306,8 @@ export const WorkClockProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
 
     const totalBreakSec = clockState.accumulatedBreakSeconds + activeBreakSec;
-    return Math.max(0, totalElapsedSec - totalBreakSec);
+    const netSec = Math.max(0, totalElapsedSec - totalBreakSec);
+    return Math.min(10 * 3600, netSec);
   };
 
   // Calculate live break duration
@@ -354,6 +356,17 @@ export const WorkClockProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       });
     } catch (err: any) {
       addToast('Clock In Failed', err.message || 'Unable to clock in.', 'error');
+    }
+  };
+
+  const resumeClockIn = async () => {
+    try {
+      const res = await api.resumeClockIn(userId);
+      setClockState(res.state);
+      setTimelineEvents(storage.getTimelineEvents(userId));
+      addToast('Shift Resumed', res.message, 'success');
+    } catch (err: any) {
+      addToast('Resume Failed', err.message || 'Unable to resume shift.', 'error');
     }
   };
 
@@ -423,6 +436,7 @@ export const WorkClockProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         timelineEvents,
         toasts,
         clockIn,
+        resumeClockIn,
         startBreak,
         endBreak,
         clockOut,

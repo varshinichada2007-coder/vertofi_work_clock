@@ -20,6 +20,7 @@ export const ClockInOutPage: React.FC = () => {
     setIsClockInModalOpen,
     setIsStartBreakModalOpen,
     endBreak,
+    resumeClockIn,
     setIsClockOutModalOpen,
   } = useWorkClock();
 
@@ -28,7 +29,7 @@ export const ClockInOutPage: React.FC = () => {
   const isOnBreak = clockState.status === 'ON_BREAK';
   const isClockedOut = clockState.status === 'CLOCKED_OUT';
 
-  const scheduledHours = 8;
+  const scheduledHours = 7;
   const scheduledSeconds = scheduledHours * 3600;
   const overtimeSec = Math.max(0, workSeconds - scheduledSeconds);
 
@@ -44,7 +45,7 @@ export const ClockInOutPage: React.FC = () => {
       {/* Page Title & Breadcrumb */}
       <div>
         <h2 className="text-xl font-bold text-slate-900 tracking-tight">Punch Clock Hub</h2>
-        <p className="text-xs text-slate-500">Record your workday shift start, pause for breaks, and clock out</p>
+        <p className="text-xs text-slate-500">Standard Shift: 6:00 PM – 1:00 AM (7h Workday) • Overnight Window Active</p>
       </div>
 
       {/* Main Digital Clock Punch Center */}
@@ -76,7 +77,7 @@ export const ClockInOutPage: React.FC = () => {
           {isClockedOut && (
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-purple-50 text-purple-700 border border-purple-200">
               <CheckCircle2 className="w-3.5 h-3.5" />
-              Shift Completed for Today
+              Shift Recorded for Today
             </span>
           )}
           {isNotClockedIn && (
@@ -129,8 +130,14 @@ export const ClockInOutPage: React.FC = () => {
           )}
 
           {isClockedOut && (
-            <div className="w-full p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-600">
-              Your attendance transaction for today is finalized.
+            <div className="w-full p-4 rounded-2xl bg-slate-50 border border-slate-200/90 text-xs text-slate-600 text-center space-y-1.5 shadow-2xs">
+              <div className="font-bold text-slate-800 flex items-center justify-center gap-1.5">
+                <CheckCircle2 className="w-4 h-4 text-purple-600" />
+                <span>Shift Finalized for Today</span>
+              </div>
+              <p className="text-[11px] text-slate-500 leading-relaxed max-w-xs mx-auto">
+                Your shift has been recorded. If you were clocked out unintentionally or have a valid reason to continue working, please contact your Admin/Manager to approve and re-open your shift.
+              </p>
             </div>
           )}
         </div>
@@ -143,7 +150,7 @@ export const ClockInOutPage: React.FC = () => {
           <div className="text-2xl font-bold text-emerald-600 font-mono tabular-nums">
             {formatHoursMins(workSeconds)}
           </div>
-          <p className="text-[11px] text-slate-400">Total active working duration</p>
+          <p className="text-[11px] text-slate-400">Total active working duration (Max 10h)</p>
         </div>
 
         <div className="bg-white p-4 rounded-xl border border-slate-200/90 shadow-2xs space-y-1">
@@ -159,7 +166,7 @@ export const ClockInOutPage: React.FC = () => {
           <div className="text-2xl font-bold text-purple-600 font-mono tabular-nums">
             {formatHoursMins(overtimeSec)}
           </div>
-          <p className="text-[11px] text-slate-400">Hours exceeding 8.0h</p>
+          <p className="text-[11px] text-slate-400">Hours exceeding 7.0h standard shift</p>
         </div>
       </div>
     </div>

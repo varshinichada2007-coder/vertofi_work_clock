@@ -45,6 +45,28 @@ export interface ActiveClockState {
   todayDateStr: string; // YYYY-MM-DD
 }
 
+/**
+ * Effective Shift Date Utility:
+ * Work shift runs 6:00 PM (18:00) to 1:00 AM (01:00), with an active shift window up to 10 hours (until morning).
+ * - Hours 12:00 PM to 23:59 PM: Counts as TODAY's shift (e.g. Thursday).
+ * - Hours 00:00 AM to 11:59 AM: Counts as the PREVIOUS day's night shift (e.g. Thursday night into Friday morning).
+ * - When 12:00 PM / 6:00 PM arrives on Friday, it cleanly transitions to Friday's new shift!
+ */
+export function getEffectiveShiftDate(date: Date = new Date()): { shiftDateStr: string; shiftDayName: string } {
+  const d = new Date(date);
+  const hours = d.getHours();
+  // If between 00:00 (midnight) and 11:59 (noon), this belongs to yesterday evening's night shift
+  if (hours < 12) {
+    d.setDate(d.getDate() - 1);
+  }
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  const shiftDateStr = `${year}-${month}-${day}`;
+  const shiftDayName = d.toLocaleDateString('en-US', { weekday: 'long' });
+  return { shiftDateStr, shiftDayName };
+}
+
 class StorageService {
   constructor() {
     this.initStorage();
@@ -230,16 +252,31 @@ class StorageService {
   getActiveClockState(userId: string): ActiveClockState {
     const key = `${STORAGE_KEYS.ACTIVE_CLOCK_PREFIX}${userId}`;
     const data = localStorage.getItem(key);
-    const todayStr = new Date().toISOString().split('T')[0];
+    const { shiftDateStr } = getEffectiveShiftDate();
 
     if (data) {
-      const state: ActiveClockState = JSON.parse(data);
-      if (state.todayDateStr !== todayStr) {
-        return this.getDefaultClockState(todayStr);
+      try {
+        const state: ActiveClockState = JSON.parse(data);
+        // If state is for a different shift date, check if active shift (< 10 hours)
+        if (state.todayDateStr !== shiftDateStr) {
+          const maxShiftMs = 10 * 3600 * 1000;
+          if (
+            state.clockInTimestamp &&
+            (Date.now() - state.clockInTimestamp < maxShiftMs) &&
+            state.status !== 'CLOCKED_OUT'
+          ) {
+            // Keep active session alive across midnight
+            return state;
+          }
+          // Shift completed / new day: fresh clean start for today's shift!
+          return this.getDefaultClockState(shiftDateStr);
+        }
+        return state;
+      } catch {
+        return this.getDefaultClockState(shiftDateStr);
       }
-      return state;
     }
-    return this.getDefaultClockState(todayStr);
+    return this.getDefaultClockState(shiftDateStr);
   }
 
   setActiveClockState(userId: string, state: ActiveClockState): void {
@@ -499,6 +536,14 @@ class StorageService {
 
   setAttendanceRecords(records: AttendanceRecord[]): void {
     localStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify(records));
+  }
+
+  setBreakRecords(records: BreakRecord[]): void {
+    localStorage.setItem(STORAGE_KEYS.BREAKS, JSON.stringify(records));
+  }
+
+  setWorkSessions(sessions: WorkSession[]): void {
+    localStorage.setItem(STORAGE_KEYS.SESSIONS, JSON.stringify(sessions));
   }
 
   setAssignedTasks(tasks: AssignedTask[]): void {

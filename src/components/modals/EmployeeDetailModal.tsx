@@ -32,6 +32,12 @@ export const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({
   const [workSessions, setWorkSessions] = useState<WorkSession[]>([]);
   const [now, setNow] = useState<Date>(new Date());
 
+  // Admin Shift Re-Open State
+  const [isReopenFormOpen, setIsReopenFormOpen] = useState(false);
+  const [reopenReason, setReopenReason] = useState('Auto clock-out error / Valid reason verified by Admin');
+  const [reopenMode, setReopenMode] = useState<'RESUME' | 'RESET_TO_CLOCK_IN'>('RESUME');
+  const [isSubmittingReopen, setIsSubmittingReopen] = useState(false);
+
   useEffect(() => {
     const timer = setInterval(() => {
       setNow(new Date());
@@ -39,13 +45,32 @@ export const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({
     return () => clearInterval(timer);
   }, []);
 
-  useEffect(() => {
+  const refreshModalData = () => {
     if (targetUser?.id) {
       api.getAttendanceHistory(targetUser.id, organization?.id).then(setAttendanceHistory);
       api.getBreakHistory(targetUser.id).then(setBreakHistory);
       api.getWorkSessions(targetUser.id).then(setWorkSessions);
     }
+  };
+
+  useEffect(() => {
+    refreshModalData();
   }, [targetUser?.id, organization?.id]);
+
+  const handleReopenShift = async () => {
+    if (!loggedInUser?.id || !targetUser?.id || !reopenReason.trim()) return;
+    setIsSubmittingReopen(true);
+    try {
+      const res = await api.adminReopenShift(loggedInUser.id, targetUser.id, reopenMode, reopenReason.trim());
+      addToast('Shift Re-Opened', res.message, 'success');
+      setIsReopenFormOpen(false);
+      refreshModalData();
+    } catch (err: any) {
+      addToast('Re-Open Failed', err.message || 'Unable to re-open shift.', 'error');
+    } finally {
+      setIsSubmittingReopen(false);
+    }
+  };
 
   if (!isOpen || !targetUser) return null;
 
@@ -201,6 +226,88 @@ export const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({
                 <h4 className="text-xs uppercase font-bold text-slate-500 mb-1">Active Task / Activity</h4>
                 <p className="text-sm font-semibold text-slate-900">"{activeClockState.currentActivity || todayRecord?.initialTask || 'No active task'}"</p>
               </div>
+
+              {/* Admin Shift Re-Open & Re-Clock In Permission Section */}
+              {isAdmin && (activeClockState.status === 'CLOCKED_OUT' || (todayRecord?.clockOut && todayRecord.clockOut !== '—')) && (
+                <div className="p-4 rounded-xl bg-purple-50/80 border border-purple-200 space-y-3">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-purple-900">
+                        <Shield className="w-4 h-4 text-purple-700" />
+                        <span>Shift Finalized / Clocked Out (Admin Override)</span>
+                      </div>
+                      <p className="text-[11px] text-purple-700 mt-0.5">
+                        If this employee was clocked out accidentally (auto-logout) or provided a valid reason to continue working, you can re-open their shift.
+                      </p>
+                    </div>
+                  </div>
+
+                  {!isReopenFormOpen ? (
+                    <button
+                      onClick={() => setIsReopenFormOpen(true)}
+                      className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs shadow-xs flex items-center gap-1.5 transition-colors"
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>Allow Re-Clock In / Re-Open Shift</span>
+                    </button>
+                  ) : (
+                    <div className="bg-white p-3.5 rounded-xl border border-purple-200 space-y-3">
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                          Approval Reason (Required):
+                        </label>
+                        <input
+                          type="text"
+                          value={reopenReason}
+                          onChange={(e) => setReopenReason(e.target.value)}
+                          placeholder="e.g. Auto clock-out error, valid reason approved by Admin"
+                          className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-purple-500"
+                        />
+                      </div>
+
+                      <div className="flex flex-col sm:flex-row gap-3 pt-1">
+                        <label className="text-[11px] font-semibold text-slate-700 flex items-center gap-1.5 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="reopenMode"
+                            checked={reopenMode === 'RESUME'}
+                            onChange={() => setReopenMode('RESUME')}
+                            className="text-purple-600 focus:ring-purple-500"
+                          />
+                          <span>Resume Shift (Keep Clock-in & Work duration)</span>
+                        </label>
+                        <label className="text-[11px] font-semibold text-slate-700 flex items-center gap-1.5 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="reopenMode"
+                            checked={reopenMode === 'RESET_TO_CLOCK_IN'}
+                            onChange={() => setReopenMode('RESET_TO_CLOCK_IN')}
+                            className="text-purple-600 focus:ring-purple-500"
+                          />
+                          <span>Reset for Fresh Clock-In</span>
+                        </label>
+                      </div>
+
+                      <div className="flex items-center gap-2 pt-1">
+                        <button
+                          disabled={!reopenReason.trim() || isSubmittingReopen}
+                          onClick={handleReopenShift}
+                          className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white font-bold text-xs shadow-xs flex items-center gap-1.5 transition-colors"
+                        >
+                          <CheckCircle2 className="w-4 h-4" />
+                          <span>{isSubmittingReopen ? 'Re-opening...' : 'Approve & Re-Open Shift'}</span>
+                        </button>
+                        <button
+                          onClick={() => setIsReopenFormOpen(false)}
+                          className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-semibold"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 

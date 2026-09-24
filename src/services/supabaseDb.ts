@@ -5,6 +5,8 @@ import {
   AuditLog, WorkScheduleConfig
 } from '../types';
 
+let hasSeededSupabase = false;
+
 export class SupabaseDbService {
   isConfigured() {
     return isSupabaseConfigured();
@@ -12,7 +14,8 @@ export class SupabaseDbService {
 
   // --- Initial Profiles Seed in Supabase ---
   async checkAndSeedDefaults(): Promise<void> {
-    if (!this.isConfigured()) return;
+    if (hasSeededSupabase || !this.isConfigured()) return;
+    hasSeededSupabase = true;
     try {
       const defaultProfiles = [
         {
