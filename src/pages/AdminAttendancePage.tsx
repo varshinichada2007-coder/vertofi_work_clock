@@ -7,20 +7,33 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import { supabaseDb } from '../services/supabaseDb';
+import { storage } from '../services/storage';
 import { AttendanceRecord, User } from '../types';
 import { EmployeeDetailModal } from '../components/modals/EmployeeDetailModal';
 
 export const AdminAttendancePage: React.FC = () => {
   const { organization } = useAuth();
-  const [records, setRecords] = useState<AttendanceRecord[]>([]);
-  const [employees, setEmployees] = useState<User[]>([]);
+  const [records, setRecords] = useState<AttendanceRecord[]>(() => {
+    try {
+      return storage.getAttendanceRecords(organization?.id).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    } catch {
+      return [];
+    }
+  });
+  const [employees, setEmployees] = useState<User[]>(() => {
+    try {
+      return storage.getUsers(organization?.id);
+    } catch {
+      return [];
+    }
+  });
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [departmentFilter, setDepartmentFilter] = useState('ALL');
   const [dateFilter, setDateFilter] = useState<string>('');
   const [selectedMember, setSelectedMember] = useState<any>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
 
   const fetchData = async () => {
     try {

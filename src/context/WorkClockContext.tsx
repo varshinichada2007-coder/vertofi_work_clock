@@ -5,6 +5,7 @@ import {
 } from '../types';
 import { storage, ActiveClockState } from '../services/storage';
 import { api, MAX_DAILY_BREAK_SECONDS } from '../services/api';
+import { supabaseDb } from '../services/supabaseDb';
 import { useAuth } from './AuthContext';
 
 interface WorkClockContextType {
@@ -132,7 +133,7 @@ export const WorkClockProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setIsInactivityModalOpen(false);
   }, []);
 
-  // Sync clock state from cloud database when active user changes or periodically
+  // Sync clock state from cloud database when active user changes, periodically, or on live Realtime push
   useEffect(() => {
     if (!user?.id) return;
 
@@ -153,11 +154,21 @@ export const WorkClockProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     };
 
     syncUserClockState();
-    const interval = setInterval(syncUserClockState, 5000);
+    const interval = setInterval(syncUserClockState, 3000);
+
+    // Supabase Realtime subscriptions: cross-laptop changes sync instantly
+    const subAttendance = supabaseDb.subscribeToTableChanges('attendance_records', () => {
+      syncUserClockState();
+    });
+    const subBreaks = supabaseDb.subscribeToTableChanges('break_records', () => {
+      syncUserClockState();
+    });
 
     return () => {
       isMounted = false;
       clearInterval(interval);
+      subAttendance?.unsubscribe?.();
+      subBreaks?.unsubscribe?.();
     };
   }, [user?.id]);
 

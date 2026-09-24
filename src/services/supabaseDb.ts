@@ -228,7 +228,7 @@ export class SupabaseDbService {
         totalDurationSeconds: r.total_work_seconds || 0,
         totalBreakSeconds: r.total_break_seconds || 0,
         netWorkSeconds: r.net_work_seconds || 0,
-        overtimeSeconds: Math.max(0, (r.net_work_seconds || 0) - 25200),
+        overtimeSeconds: Math.max(0, (r.net_work_seconds || 0) - 28800),
         status: (r.status?.toUpperCase() === 'ON_BREAK' ? 'ON_BREAK' : ((r.status?.toUpperCase() === 'LATE' || r.is_late) ? 'LATE' : 'PRESENT')),
         completionStatus: r.completion_status || (r.status?.toUpperCase() === 'ON_BREAK' ? 'On Break' : 'Working'),
         isLate: r.is_late || false,

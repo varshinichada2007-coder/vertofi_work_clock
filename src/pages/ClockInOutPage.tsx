@@ -29,9 +29,9 @@ export const ClockInOutPage: React.FC = () => {
   const isOnBreak = clockState.status === 'ON_BREAK';
   const isClockedOut = clockState.status === 'CLOCKED_OUT';
 
-  const scheduledHours = 7;
-  const scheduledSeconds = scheduledHours * 3600;
-  const overtimeSec = Math.max(0, workSeconds - scheduledSeconds);
+  const overtimeThresholdHours = 8;
+  const overtimeThresholdSeconds = overtimeThresholdHours * 3600;
+  const overtimeSec = Math.max(0, workSeconds - overtimeThresholdSeconds);
 
   const formatHoursMins = (totalSec: number) => {
     const h = Math.floor(totalSec / 3600);
@@ -166,7 +166,7 @@ export const ClockInOutPage: React.FC = () => {
           <div className="text-2xl font-bold text-purple-600 font-mono tabular-nums">
             {formatHoursMins(overtimeSec)}
           </div>
-          <p className="text-[11px] text-slate-400">Hours exceeding 7.0h standard shift</p>
+          <p className="text-[11px] text-slate-400">Hours exceeding 8.0h work time</p>
         </div>
       </div>
     </div>

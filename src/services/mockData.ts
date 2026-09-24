@@ -32,7 +32,7 @@ export const DEFAULT_WORK_SCHEDULE: WorkScheduleConfig = {
     { day: 'Sunday', isWorkday: false, startTime: '18:00', endTime: '22:00', requiredHours: 0 }
   ],
   lateGraceMinutes: 15,
-  overtimeThresholdHours: 7,
+  overtimeThresholdHours: 8,
   maxBreakMinutes: 60
 };
 

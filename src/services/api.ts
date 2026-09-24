@@ -101,6 +101,28 @@ export const api = {
 
     storage.setCurrentUserId(found.id);
     storage.setCurrentOrgId(found.organizationId);
+
+    // Sync remote attendance and break records for this user across laptops with fast timeout
+    const syncPromise = Promise.all([
+      supabaseDb.getAttendanceRecords(found.organizationId),
+      supabaseDb.getBreakRecords()
+    ]).then(([remoteAttendance, remoteBreaks]) => {
+      if (remoteAttendance && remoteAttendance.length > 0) {
+        storage.setAttendanceRecords(remoteAttendance);
+      }
+      if (remoteBreaks && remoteBreaks.length > 0) {
+        storage.setBreakRecords(remoteBreaks);
+      }
+    }).catch(e => {
+      console.warn('Attendance sync during login warning:', e);
+    });
+
+    // Fast resolution: wait up to 400ms max so login feels instantaneous, then completes in background
+    await Promise.race([
+      syncPromise,
+      new Promise(res => setTimeout(res, 400))
+    ]);
+
     return found;
   },
 
@@ -439,6 +461,27 @@ export const api = {
       (r.userId === userId || r.userId === user?.employeeId) && 
       r.date === shiftDateStr
     );
+
+    if (!todayRecord) {
+      try {
+        const remote = await supabaseDb.getAttendanceRecords(orgId);
+        if (remote !== null) {
+          storage.setAttendanceRecords(remote);
+          records = remote;
+          todayRecord = remote.find(r => 
+            (r.userId === userId || r.userId === user?.employeeId) && 
+            r.date === shiftDateStr
+          );
+        }
+      } catch (e) {
+        console.warn('Supabase sync in getTodayAttendance:', e);
+      }
+    } else {
+      supabaseDb.getAttendanceRecords(orgId).then(remote => {
+        if (remote) storage.setAttendanceRecords(remote);
+      }).catch(() => {});
+    }
+
     let activeClockState = storage.getActiveClockState(userId);
 
     // 10-Hour Maximum Shift Duration Guard
@@ -833,13 +876,10 @@ export const api = {
     const maxShiftSec = 10 * 3600;
     const netWorkSec = Math.min(maxShiftSec, Math.max(0, totalElapsedSec - breakSec));
 
-    // Standard required work hours (7 hours: 6:00 PM to 1:00 AM)
-    const scheduleConfig = storage.getWorkSchedule(orgId);
-    const requiredHours = scheduleConfig.overtimeThresholdHours || 7;
-    const requiredSeconds = requiredHours * 3600;
-
-    const overtimeSec = Math.max(0, netWorkSec - requiredSeconds);
-    const isCompleted = netWorkSec >= requiredSeconds;
+    // Overtime calculated ONLY after 8.0 hours of work time (28,800s)
+    const overtimeThresholdSeconds = 8 * 3600;
+    const overtimeSec = Math.max(0, netWorkSec - overtimeThresholdSeconds);
+    const isCompleted = netWorkSec >= (7 * 3600);
     const completionStatus = isCompleted ? '7 Hour Work Completed' : 'Workday Incomplete';
 
     const newState = {
@@ -1248,7 +1288,7 @@ export const api = {
       }
 
       const remainingBreakSec = Math.max(0, MAX_DAILY_BREAK_SECONDS - totalBreak);
-      const overtimeSec = Math.max(0, totalWork - 25200); // 7.0h shift threshold (6 PM - 1 AM)
+      const overtimeSec = Math.max(0, totalWork - 28800); // 8.0h shift overtime threshold (8h = 28,800s)
 
       const clockInFormatted = (effectiveStatus !== 'NOT_CLOCKED_IN' && effectiveClockInTs)
         ? new Date(effectiveClockInTs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })

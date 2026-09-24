@@ -268,14 +268,51 @@ class StorageService {
             // Keep active session alive across midnight
             return state;
           }
-          // Shift completed / new day: fresh clean start for today's shift!
           return this.getDefaultClockState(shiftDateStr);
         }
         return state;
       } catch {
-        return this.getDefaultClockState(shiftDateStr);
+        // Fallback below
       }
     }
+
+    // If no local state on this laptop, reconcile from synced attendance records (cross-device sync)
+    const records = this.getAttendanceRecords();
+    const user = this.getUserById(userId);
+    const todayRecord = records.find(r => 
+      (r.userId === userId || r.userId === user?.employeeId) && 
+      r.date === shiftDateStr
+    );
+
+    if (todayRecord) {
+      const hasActualClockOut = Boolean(
+        (todayRecord.clockOutTimestamp && todayRecord.clockOutTimestamp > (todayRecord.clockInTimestamp || 0)) ||
+        (todayRecord.clockOut && todayRecord.clockOut !== '—' && todayRecord.clockOut !== '' && todayRecord.clockOut.trim().length > 0)
+      );
+
+      let status: EmployeeStatus = 'NOT_CLOCKED_IN';
+      if (hasActualClockOut) {
+        status = 'CLOCKED_OUT';
+      } else if (todayRecord.status === 'ON_BREAK') {
+        status = 'ON_BREAK';
+      } else if (todayRecord.clockInTimestamp || (todayRecord.clockIn && todayRecord.clockIn !== '—')) {
+        status = 'WORKING';
+      }
+
+      return {
+        status,
+        clockInTimestamp: todayRecord.clockInTimestamp || null,
+        clockOutTimestamp: hasActualClockOut ? (todayRecord.clockOutTimestamp || null) : null,
+        accumulatedBreakSeconds: todayRecord.totalBreakSeconds || 0,
+        currentBreakStartTimestamp: status === 'ON_BREAK' ? Date.now() : null,
+        currentBreakType: status === 'ON_BREAK' ? 'Personal' : null,
+        currentActivity: todayRecord.currentActivity || todayRecord.initialTask || 'Working',
+        initialTask: todayRecord.initialTask || 'Work Shift',
+        attendanceId: todayRecord.id,
+        todayDateStr: shiftDateStr
+      };
+    }
+
     return this.getDefaultClockState(shiftDateStr);
   }
 

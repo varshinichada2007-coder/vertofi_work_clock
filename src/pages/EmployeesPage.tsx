@@ -7,6 +7,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import { supabaseDb } from '../services/supabaseDb';
+import { storage } from '../services/storage';
 import { User, EmployeeType } from '../types';
 import { AddEmployeeModal } from '../components/modals/AddEmployeeModal';
 import { EmployeeDetailModal } from '../components/modals/EmployeeDetailModal';
@@ -14,7 +15,13 @@ import { AssignWorkModal } from '../components/modals/AssignWorkModal';
 
 export const EmployeesPage: React.FC = () => {
   const { user, organization, toggleEmployeeStatus } = useAuth();
-  const [employees, setEmployees] = useState<User[]>([]);
+  const [employees, setEmployees] = useState<User[]>(() => {
+    try {
+      return storage.getUsers(organization?.id);
+    } catch {
+      return [];
+    }
+  });
   const [searchQuery, setSearchQuery] = useState('');
   const [departmentFilter, setDepartmentFilter] = useState('ALL');
   const [statusFilter, setStatusFilter] = useState('ALL');
@@ -24,7 +31,7 @@ export const EmployeesPage: React.FC = () => {
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [assignTargetUserId, setAssignTargetUserId] = useState<string>('');
   const [editingUser, setEditingUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
 
   const fetchEmployees = async () => {
     try {

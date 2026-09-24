@@ -14,6 +14,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { useWorkClock } from '../context/WorkClockContext';
 import { api } from '../services/api';
+import { storage } from '../services/storage';
 import { supabaseDb } from '../services/supabaseDb';
 import {
   TeamMemberStatus, LeaveRequest, AttendanceCorrectionRequest,
@@ -50,20 +51,50 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
   // Admin Dashboard State
   const [teamMembers, setTeamMembers] = useState<TeamMemberStatus[]>([]);
   const [reportsData, setReportsData] = useState<any>(null);
-  const [pendingLeaves, setPendingLeaves] = useState<LeaveRequest[]>([]);
-  const [pendingCorrections, setPendingCorrections] = useState<AttendanceCorrectionRequest[]>([]);
-  const [adminAssignedTasks, setAdminAssignedTasks] = useState<AssignedTask[]>([]);
+  const [pendingLeaves, setPendingLeaves] = useState<LeaveRequest[]>(() => {
+    try {
+      return storage.getLeaveRequests(organization?.id).filter((l: LeaveRequest) => l.status === 'Pending');
+    } catch {
+      return [];
+    }
+  });
+  const [pendingCorrections, setPendingCorrections] = useState<AttendanceCorrectionRequest[]>(() => {
+    try {
+      return storage.getCorrectionRequests(organization?.id).filter((c: AttendanceCorrectionRequest) => c.status === 'Pending');
+    } catch {
+      return [];
+    }
+  });
+  const [adminAssignedTasks, setAdminAssignedTasks] = useState<AssignedTask[]>(() => {
+    try {
+      return storage.getAssignedTasks(organization?.id);
+    } catch {
+      return [];
+    }
+  });
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedMember, setSelectedMember] = useState<TeamMemberStatus | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Employee Assigned Tasks & Attendance History State
-  const [employeeTasks, setEmployeeTasks] = useState<AssignedTask[]>([]);
-  const [employeeAttendanceHistory, setEmployeeAttendanceHistory] = useState<AttendanceRecord[]>([]);
+  const [employeeTasks, setEmployeeTasks] = useState<AssignedTask[]>(() => {
+    try {
+      return user ? storage.getAssignedTasks(organization?.id).filter((t: AssignedTask) => t.assignedToUserId === user.id) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [employeeAttendanceHistory, setEmployeeAttendanceHistory] = useState<AttendanceRecord[]>(() => {
+    try {
+      return user ? storage.getAttendanceRecords(organization?.id).filter((r: AttendanceRecord) => r.userId === user.id) : [];
+    } catch {
+      return [];
+    }
+  });
   const [updatingTaskId, setUpdatingTaskId] = useState<string | null>(null);
 
   const fetchAdminData = async (showFeedback = false) => {
