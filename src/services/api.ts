@@ -447,7 +447,7 @@ export const api = {
 
     const todayRecord = records.find(r => 
       (r.userId === userId || r.userId === user?.employeeId) && 
-      (r.date === todayStr || (r.clockInTimestamp && (Date.now() - Number(r.clockInTimestamp)) < 24 * 3600 * 1000))
+      r.date === todayStr
     );
     let activeClockState = storage.getActiveClockState(userId);
 
@@ -514,7 +514,7 @@ export const api = {
     // Late Detection against configured organization schedule
     const scheduleConfig = storage.getWorkSchedule(orgId);
     const daySched = scheduleConfig.schedules.find(s => s.day === dayName);
-    const expectedStart = daySched?.startTime || '09:00';
+    const expectedStart = daySched?.startTime || '18:00';
     const [expHourStr, expMinStr] = expectedStart.split(':');
     const targetHour = parseInt(expHourStr, 10);
     const targetMin = parseInt(expMinStr, 10);
@@ -646,7 +646,7 @@ export const api = {
     let records = storage.getAttendanceRecords(orgId);
     let todayRecord = records.find(r => 
       (r.userId === userId || r.userId === user.employeeId) && 
-      (r.date === todayStr || (r.clockInTimestamp && (nowMs - Number(r.clockInTimestamp)) < 24 * 3600 * 1000))
+      r.date === todayStr
     );
 
     if (!todayRecord) {
@@ -656,7 +656,7 @@ export const api = {
           storage.setAttendanceRecords(remote);
           todayRecord = remote.find(r => 
             (r.userId === userId || r.userId === user.employeeId) && 
-            (r.date === todayStr || (r.clockInTimestamp && (nowMs - Number(r.clockInTimestamp)) < 24 * 3600 * 1000))
+            r.date === todayStr
           );
         }
       } catch (e) {
@@ -771,7 +771,7 @@ export const api = {
     const records = storage.getAttendanceRecords(orgId);
     const todayRecord = records.find(r => 
       (r.userId === userId || r.userId === user.employeeId) && 
-      (r.date === todayStr || (r.clockInTimestamp && (nowMs - Number(r.clockInTimestamp)) < 24 * 3600 * 1000))
+      r.date === todayStr
     );
     if (todayRecord) {
       todayRecord.totalBreakSeconds = newAccumulatedBreak;
@@ -1013,10 +1013,10 @@ export const api = {
     const attendanceRecords = storage.getAttendanceRecords(targetOrg);
 
     return employees.map(user => {
-      // Find today's record or the most recent punch within 24 hours
+      // Find strictly today's record
       const attToday = attendanceRecords.find(r => 
         (r.userId === user.id || r.userId === user.employeeId) &&
-        (r.date === todayStr || (r.clockInTimestamp && (nowMs - Number(r.clockInTimestamp)) < 24 * 3600 * 1000))
+        r.date === todayStr
       );
       const clockState = storage.getActiveClockState(user.id);
 
@@ -1025,9 +1025,10 @@ export const api = {
       let effectiveClockInTs: number | null = null;
       let effectiveClockOutTs: number | null = null;
       let totalBreak = 0;
+      let totalWork = 0;
 
       if (attToday) {
-        effectiveClockInTs = attToday.clockInTimestamp ? Number(attToday.clockInTimestamp) : (clockState.clockInTimestamp || null);
+        effectiveClockInTs = attToday.clockInTimestamp ? Number(attToday.clockInTimestamp) : (clockState.todayDateStr === todayStr ? clockState.clockInTimestamp : null);
         
         const hasActualClockOut = Boolean(
           (attToday.clockOutTimestamp && Number(attToday.clockOutTimestamp) > (effectiveClockInTs || 0)) ||
@@ -1047,7 +1048,7 @@ export const api = {
           effectiveStatus = 'CLOCKED_OUT';
         } else if (attToday.status === 'ON_BREAK') {
           effectiveStatus = 'ON_BREAK';
-          if (clockState.currentBreakStartTimestamp) {
+          if (clockState.todayDateStr === todayStr && clockState.currentBreakStartTimestamp) {
             totalBreak += Math.max(0, Math.floor((nowMs - clockState.currentBreakStartTimestamp) / 1000));
           }
         } else if (isClockedIn || attToday.status === 'WORKING' || attToday.status === 'LATE' || attToday.status === 'PRESENT') {
@@ -1056,8 +1057,21 @@ export const api = {
           effectiveStatus = 'NOT_CLOCKED_IN';
           effectiveActivity = 'On Approved Leave';
         }
+
+        if (effectiveClockInTs) {
+          if (effectiveStatus === 'WORKING' || effectiveStatus === 'ON_BREAK') {
+            const totalElapsed = Math.max(0, Math.floor((nowMs - effectiveClockInTs) / 1000));
+            totalWork = Math.max(0, totalElapsed - totalBreak);
+          } else if (effectiveStatus === 'CLOCKED_OUT') {
+            const endMs = effectiveClockOutTs || nowMs;
+            const totalElapsed = Math.max(0, Math.floor((endMs - effectiveClockInTs) / 1000));
+            totalWork = attToday?.netWorkSeconds || Math.max(0, totalElapsed - totalBreak);
+          }
+        } else {
+          totalWork = attToday.netWorkSeconds || 0;
+        }
       } else if (clockState && clockState.todayDateStr === todayStr && clockState.status !== 'NOT_CLOCKED_IN') {
-        // Fallback to local clock state if on the same browser
+        // Fallback to local clock state if on the same browser for today
         effectiveStatus = clockState.status;
         effectiveActivity = clockState.currentActivity;
         effectiveClockInTs = clockState.clockInTimestamp;
@@ -1066,29 +1080,24 @@ export const api = {
         if (effectiveStatus === 'ON_BREAK' && clockState.currentBreakStartTimestamp) {
           totalBreak += Math.max(0, Math.floor((nowMs - clockState.currentBreakStartTimestamp) / 1000));
         }
-      }
-
-      let totalWork = 0;
-      if (effectiveClockInTs) {
-        if (effectiveStatus === 'WORKING' || effectiveStatus === 'ON_BREAK') {
-          const totalElapsed = Math.max(0, Math.floor((nowMs - effectiveClockInTs) / 1000));
-          totalWork = Math.max(0, totalElapsed - totalBreak);
-        } else if (effectiveStatus === 'CLOCKED_OUT') {
-          const endMs = effectiveClockOutTs || nowMs;
-          const totalElapsed = Math.max(0, Math.floor((endMs - effectiveClockInTs) / 1000));
-          totalWork = attToday?.netWorkSeconds || Math.max(0, totalElapsed - totalBreak);
+        if (effectiveClockInTs) {
+          if (effectiveStatus === 'WORKING' || effectiveStatus === 'ON_BREAK') {
+            const totalElapsed = Math.max(0, Math.floor((nowMs - effectiveClockInTs) / 1000));
+            totalWork = Math.max(0, totalElapsed - totalBreak);
+          } else if (effectiveStatus === 'CLOCKED_OUT') {
+            const endMs = effectiveClockOutTs || nowMs;
+            const totalElapsed = Math.max(0, Math.floor((endMs - effectiveClockInTs) / 1000));
+            totalWork = Math.max(0, totalElapsed - totalBreak);
+          }
         }
-      } else if (attToday) {
-        totalWork = attToday.netWorkSeconds || 0;
-        totalBreak = attToday.totalBreakSeconds || 0;
       }
 
       const remainingBreakSec = Math.max(0, MAX_DAILY_BREAK_SECONDS - totalBreak);
       const overtimeSec = Math.max(0, totalWork - 25200); // 7.0h shift threshold (6 PM - 1 AM)
 
-      const clockInFormatted = effectiveClockInTs
+      const clockInFormatted = (effectiveStatus !== 'NOT_CLOCKED_IN' && effectiveClockInTs)
         ? new Date(effectiveClockInTs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-        : (attToday?.clockIn && attToday.clockIn !== '—' ? attToday.clockIn : undefined);
+        : (effectiveStatus !== 'NOT_CLOCKED_IN' && attToday?.clockIn && attToday.clockIn !== '—' ? attToday.clockIn : undefined);
 
       let breakStartedFormatted: string | undefined = undefined;
       if (effectiveStatus === 'ON_BREAK' && clockState.currentBreakStartTimestamp) {
@@ -1113,9 +1122,9 @@ export const api = {
         clockInTimeFormatted: clockInFormatted,
         currentActivity: effectiveActivity,
         breakStartedFormatted,
-        totalBreakSecondsToday: totalBreak,
+        totalBreakSecondsToday: effectiveStatus === 'NOT_CLOCKED_IN' ? 0 : totalBreak,
         remainingBreakSecondsToday: remainingBreakSec,
-        totalWorkSecondsToday: totalWork,
+        totalWorkSecondsToday: effectiveStatus === 'NOT_CLOCKED_IN' ? 0 : totalWork,
         overtimeSecondsToday: overtimeSec,
         lastActive: lastActiveStr
       };

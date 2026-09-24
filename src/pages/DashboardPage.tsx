@@ -468,7 +468,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
     const clockedOutToday = teamMembers.filter(m => m.currentStatus === 'CLOCKED_OUT').length;
     const presentToday = workingNow + onBreakNow + clockedOutToday;
     const absentToday = teamMembers.filter(m => m.attendanceToday?.status === 'ABSENT').length;
-    const lateToday = teamMembers.filter(m => m.attendanceToday?.isLate || m.attendanceToday?.status === 'LATE').length;
+    const lateToday = teamMembers.filter(m => m.currentStatus !== 'NOT_CLOCKED_IN' && (m.attendanceToday?.isLate || m.attendanceToday?.status === 'LATE')).length;
     const onLeaveToday = teamMembers.filter(m => m.attendanceToday?.status === 'LEAVE').length;
     const notClockedInToday = teamMembers.filter(m => m.currentStatus === 'NOT_CLOCKED_IN').length;
     const attendancePct = totalEmployees > 0 ? Math.round((presentToday / totalEmployees) * 100) : 0;
@@ -972,7 +972,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
                             </span>
                           )}
 
-                          {isLate && (
+                          {isLate && member.currentStatus !== 'NOT_CLOCKED_IN' && (
                             <span className="ml-1 inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-semibold bg-rose-50 text-rose-700 border border-rose-200">
                               Late ({member.attendanceToday?.lateMinutes}m)
                             </span>
@@ -980,19 +980,19 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
                         </td>
 
                         <td className="px-3 py-3 font-mono text-slate-700">
-                          {member.clockInTimeFormatted || '—'}
+                          {member.currentStatus !== 'NOT_CLOCKED_IN' && member.clockInTimeFormatted ? member.clockInTimeFormatted : '—'}
                         </td>
 
                         <td className="px-3 py-3 font-mono text-slate-700">
-                          {member.attendanceToday?.clockOut || '—'}
+                          {member.currentStatus !== 'NOT_CLOCKED_IN' && member.attendanceToday?.clockOut && member.attendanceToday.clockOut !== '—' ? member.attendanceToday.clockOut : '—'}
                         </td>
 
                         <td className="px-3 py-3 font-bold text-slate-900 font-mono">
-                          {formatShortHM(member.totalWorkSecondsToday)}
+                          {member.currentStatus !== 'NOT_CLOCKED_IN' && member.totalWorkSecondsToday > 0 ? formatShortHM(member.totalWorkSecondsToday) : '—'}
                         </td>
 
                         <td className="px-3 py-3 text-slate-500 font-mono">
-                          {formatShortHM(member.totalBreakSecondsToday)}
+                          {member.currentStatus !== 'NOT_CLOCKED_IN' && member.totalBreakSecondsToday > 0 ? formatShortHM(member.totalBreakSecondsToday) : '—'}
                         </td>
 
                         <td className="px-3 py-3 text-right">

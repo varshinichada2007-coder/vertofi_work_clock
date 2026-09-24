@@ -130,7 +130,19 @@ class StorageService {
     if (data) {
       const schedules: WorkScheduleConfig[] = JSON.parse(data);
       const found = schedules.find(s => s.organizationId === orgId);
-      if (found) return found;
+      if (found) {
+        // Automatically migrate legacy 09:00 defaults to 18:00 (6:00 PM - 1:00 AM shift)
+        if (found.schedules.some(s => s.startTime === '09:00')) {
+          found.schedules = found.schedules.map(s => ({
+            ...s,
+            startTime: '18:00',
+            endTime: s.isWorkday ? '01:00' : '22:00',
+            requiredHours: s.isWorkday ? 7 : 0
+          }));
+          this.saveWorkSchedule(found);
+        }
+        return found;
+      }
     }
     return { ...DEFAULT_WORK_SCHEDULE, organizationId: orgId };
   }
@@ -222,7 +234,7 @@ class StorageService {
 
     if (data) {
       const state: ActiveClockState = JSON.parse(data);
-      if (state.todayDateStr !== todayStr && state.status === 'CLOCKED_OUT') {
+      if (state.todayDateStr !== todayStr) {
         return this.getDefaultClockState(todayStr);
       }
       return state;
