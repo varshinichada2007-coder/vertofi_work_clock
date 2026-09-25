@@ -12,9 +12,9 @@ export const DEFAULT_ORGANIZATIONS: Organization[] = [
     logo: '/logo.svg',
     timezone: 'Asia/Kolkata',
     currency: 'INR',
-    standardWorkHours: 7,
+    standardWorkHours: 8,
     standardStartTime: '18:00',
-    standardEndTime: '01:00',
+    standardEndTime: '02:00',
     lateGraceMinutes: 15,
     createdAt: '2026-01-01T00:00:00.000Z'
   }
@@ -23,11 +23,11 @@ export const DEFAULT_ORGANIZATIONS: Organization[] = [
 export const DEFAULT_WORK_SCHEDULE: WorkScheduleConfig = {
   organizationId: 'org_vertofi',
   schedules: [
-    { day: 'Monday', isWorkday: true, startTime: '18:00', endTime: '01:00', requiredHours: 7 },
-    { day: 'Tuesday', isWorkday: true, startTime: '18:00', endTime: '01:00', requiredHours: 7 },
-    { day: 'Wednesday', isWorkday: true, startTime: '18:00', endTime: '01:00', requiredHours: 7 },
-    { day: 'Thursday', isWorkday: true, startTime: '18:00', endTime: '01:00', requiredHours: 7 },
-    { day: 'Friday', isWorkday: true, startTime: '18:00', endTime: '01:00', requiredHours: 7 },
+    { day: 'Monday', isWorkday: true, startTime: '18:00', endTime: '02:00', requiredHours: 8 },
+    { day: 'Tuesday', isWorkday: true, startTime: '18:00', endTime: '02:00', requiredHours: 8 },
+    { day: 'Wednesday', isWorkday: true, startTime: '18:00', endTime: '02:00', requiredHours: 8 },
+    { day: 'Thursday', isWorkday: true, startTime: '18:00', endTime: '02:00', requiredHours: 8 },
+    { day: 'Friday', isWorkday: true, startTime: '18:00', endTime: '02:00', requiredHours: 8 },
     { day: 'Saturday', isWorkday: false, startTime: '18:00', endTime: '22:00', requiredHours: 0 },
     { day: 'Sunday', isWorkday: false, startTime: '18:00', endTime: '22:00', requiredHours: 0 }
   ],
@@ -40,7 +40,7 @@ export const DEFAULT_SETTINGS: ReminderSettings = {
   clockInReminder: true,
   clockInTime: '18:00',
   clockOutReminder: true,
-  clockOutTime: '01:00',
+  clockOutTime: '02:00',
   breakDurationWarning: true,
   maxBreakMinutes: 60,
   activityCheckIn: true,
@@ -48,11 +48,11 @@ export const DEFAULT_SETTINGS: ReminderSettings = {
   use24HourClock: false,
   timezone: 'Asia/Kolkata',
   emailNotifications: true,
-  autoClockOutOnIdle: false,
-  idleTimeoutMinutes: 30,
-  autoClockOutOnScreenOff: false,
-  screenOffGraceSeconds: 60,
-  idleWarningSeconds: 30
+  autoClockOutOnIdle: true,
+  idleTimeoutMinutes: 10,
+  autoClockOutOnScreenOff: true,
+  screenOffGraceSeconds: 600,
+  idleWarningSeconds: 60
 };
 
 export const INITIAL_USERS: User[] = [

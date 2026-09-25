@@ -177,19 +177,47 @@ export const WorkClockProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     };
   }, [user?.id]);
 
-  // Master Activity Tracker: Keeps session alive on any user activity
+  // Master Activity Tracker: Keeps session alive on user interaction
   useEffect(() => {
     const handleUserActivity = () => {
       lastActivityRef.current = Date.now();
+      autoClockOutTriggeredRef.current = false;
     };
 
     const events = ['mousemove', 'mousedown', 'click', 'keydown', 'touchstart', 'touchmove', 'scroll', 'wheel', 'pointermove', 'focus'];
     events.forEach(evt => window.addEventListener(evt, handleUserActivity, { passive: true }));
 
+    // Screen lock / wake-up listener
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        const idleMs = Date.now() - lastActivityRef.current;
+        const idleSec = Math.floor(idleMs / 1000);
+        const timeoutSec = Math.max(300, (settings.idleTimeoutMinutes || 10) * 60);
+
+        if (clockState.status === 'WORKING' && settings.autoClockOutOnIdle !== false && idleSec >= timeoutSec && !autoClockOutTriggeredRef.current) {
+          autoClockOutTriggeredRef.current = true;
+          api.clockOut(userId, `Auto Clocked Out: Extended inactivity / screen locked (${settings.idleTimeoutMinutes || 10} mins)`)
+            .then(res => {
+              setClockState(res.state);
+              setTimelineEvents(storage.getTimelineEvents(userId));
+              addToast(
+                'Auto Clocked Out (Inactivity / Screen Lock)',
+                `You were automatically clocked out due to inactivity for ${settings.idleTimeoutMinutes || 10} minutes.`,
+                'warning'
+              );
+            })
+            .catch(() => {});
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
     return () => {
       events.forEach(evt => window.removeEventListener(evt, handleUserActivity));
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, []);
+  }, [clockState.status, settings.autoClockOutOnIdle, settings.idleTimeoutMinutes, userId]);
 
   // Master 1-second interval timer
   useEffect(() => {
@@ -197,12 +225,12 @@ export const WorkClockProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const currentTime = new Date();
       setNow(currentTime);
 
-      // Only check inactivity if explicitly enabled in settings (disabled by default to prevent accidental clock-outs while working in other tabs)
-      if (clockState.status === 'WORKING' && settings.autoClockOutOnIdle === true) {
+      // Inactivity & Screen Lock Detection (Configured for 10 minutes)
+      if (clockState.status === 'WORKING' && settings.autoClockOutOnIdle !== false) {
         const idleMs = Date.now() - lastActivityRef.current;
         const idleSec = Math.floor(idleMs / 1000);
-        const timeoutSec = Math.max(300, (settings.idleTimeoutMinutes || 30) * 60);
-        const warningSec = settings.idleWarningSeconds || 60;
+        const timeoutSec = Math.max(300, (settings.idleTimeoutMinutes || 10) * 60); // 10 mins = 600s
+        const warningSec = settings.idleWarningSeconds || 60; // 60s warning countdown
         const warningStartSec = Math.max(10, timeoutSec - warningSec);
 
         if (idleSec >= warningStartSec && idleSec < timeoutSec) {
@@ -212,13 +240,13 @@ export const WorkClockProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           autoClockOutTriggeredRef.current = true;
           setIsInactivityModalOpen(false);
 
-          api.clockOut(userId, `Auto Clocked Out: Extended inactivity detected (${settings.idleTimeoutMinutes || 30} mins)`)
+          api.clockOut(userId, `Auto Clocked Out: Extended inactivity / screen locked (${settings.idleTimeoutMinutes || 10} mins)`)
             .then(res => {
               setClockState(res.state);
               setTimelineEvents(storage.getTimelineEvents(userId));
               addToast(
-                'Auto Clocked Out (Inactivity)',
-                `You were automatically clocked out due to lack of activity for ${settings.idleTimeoutMinutes || 30} minutes.`,
+                'Auto Clocked Out (Inactivity / Screen Lock)',
+                `You were automatically clocked out due to inactivity for ${settings.idleTimeoutMinutes || 10} minutes.`,
                 'warning'
               );
             })

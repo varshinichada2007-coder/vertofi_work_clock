@@ -153,14 +153,16 @@ class StorageService {
       const schedules: WorkScheduleConfig[] = JSON.parse(data);
       const found = schedules.find(s => s.organizationId === orgId);
       if (found) {
-        // Automatically migrate legacy 09:00 defaults to 18:00 (6:00 PM - 1:00 AM shift)
-        if (found.schedules.some(s => s.startTime === '09:00')) {
+        // Automatically migrate legacy 09:00 or 01:00 defaults to 18:00 - 02:00 (6:00 PM - 2:00 AM 8h shift)
+        if (found.schedules.some(s => s.startTime === '09:00' || (s.isWorkday && s.endTime === '01:00'))) {
           found.schedules = found.schedules.map(s => ({
             ...s,
             startTime: '18:00',
-            endTime: s.isWorkday ? '01:00' : '22:00',
-            requiredHours: s.isWorkday ? 7 : 0
+            endTime: s.isWorkday ? '02:00' : '22:00',
+            requiredHours: s.isWorkday ? 8 : 0
           }));
+          found.overtimeThresholdHours = 8;
+          found.maxBreakMinutes = 60;
           this.saveWorkSchedule(found);
         }
         return found;
@@ -512,7 +514,20 @@ class StorageService {
   // --- Settings ---
   getSettings(): ReminderSettings {
     const data = localStorage.getItem(STORAGE_KEYS.SETTINGS);
-    return data ? JSON.parse(data) : DEFAULT_SETTINGS;
+    if (data) {
+      try {
+        const settings: ReminderSettings = JSON.parse(data);
+        return {
+          ...DEFAULT_SETTINGS,
+          ...settings,
+          idleTimeoutMinutes: settings.idleTimeoutMinutes || 10,
+          idleWarningSeconds: settings.idleWarningSeconds || 60
+        };
+      } catch {
+        return DEFAULT_SETTINGS;
+      }
+    }
+    return DEFAULT_SETTINGS;
   }
 
   saveSettings(settings: ReminderSettings): void {

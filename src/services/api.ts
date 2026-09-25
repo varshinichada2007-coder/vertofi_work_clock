@@ -348,7 +348,7 @@ export const api = {
     };
 
     storage.addUser(newUser);
-    supabaseDb.upsertProfile(newUser).catch(e => console.warn('Supabase addEmployee err:', e));
+    await supabaseDb.upsertProfile(newUser).catch(e => console.warn('Supabase addEmployee err:', e));
 
     const currentUser = storage.getCurrentUser();
     if (currentUser) {
@@ -384,7 +384,7 @@ export const api = {
     };
 
     storage.updateUser(updatedUser);
-    supabaseDb.upsertProfile(updatedUser).catch(e => console.warn('Supabase updateEmployee err:', e));
+    await supabaseDb.upsertProfile(updatedUser).catch(e => console.warn('Supabase updateEmployee err:', e));
 
     const currentUser = storage.getCurrentUser();
     if (currentUser) {
@@ -1096,7 +1096,7 @@ export const api = {
     });
 
     // Audit Log
-    storage.addAuditLog({
+    const createdLog = storage.addAuditLog({
       organizationId: orgId,
       action: 'ATTENDANCE_CORRECTION',
       targetUserId: employeeUserId,
@@ -1110,6 +1110,7 @@ export const api = {
       changedByRole: 'ADMIN',
       reason: `Re-opened shift: ${reason} (Mode: ${mode})`
     });
+    supabaseDb.insertAuditLog(createdLog).catch(e => console.warn('Supabase log error in adminReopenShift:', e));
 
     return {
       success: true,

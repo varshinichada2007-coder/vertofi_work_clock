@@ -13,17 +13,30 @@ export const SettingsPage: React.FC = () => {
   const { settings, updateSettings, addToast } = useWorkClock();
   const isAdmin = role === 'ADMIN';
 
+  // Helper to compute hours between two times (supports overnight/next-day shifts)
+  const calculateHoursBetween = (start: string, end: string): number => {
+    if (!start || !end) return 8;
+    const [startH, startM] = start.split(':').map(Number);
+    const [endH, endM] = end.split(':').map(Number);
+    let totalMins = (endH * 60 + (endM || 0)) - (startH * 60 + (startM || 0));
+    if (totalMins <= 0) {
+      totalMins += 24 * 60; // Next-day rollover (e.g. 18:00 to 02:00 = 8h)
+    }
+    const hours = Math.round((totalMins / 60) * 10) / 10;
+    return hours;
+  };
+
   // Work Schedule State (For Admin)
   const [scheduleConfig, setScheduleConfig] = useState<WorkScheduleConfig>({
     organizationId: organization?.id || 'org_vertofi',
     schedules: [
-      { day: 'Monday', isWorkday: true, startTime: '09:00', endTime: '17:30', requiredHours: 8 },
-      { day: 'Tuesday', isWorkday: true, startTime: '09:00', endTime: '17:30', requiredHours: 8 },
-      { day: 'Wednesday', isWorkday: true, startTime: '09:00', endTime: '17:30', requiredHours: 8 },
-      { day: 'Thursday', isWorkday: true, startTime: '09:00', endTime: '17:30', requiredHours: 8 },
-      { day: 'Friday', isWorkday: true, startTime: '09:00', endTime: '17:30', requiredHours: 8 },
-      { day: 'Saturday', isWorkday: false, startTime: '09:00', endTime: '13:00', requiredHours: 0 },
-      { day: 'Sunday', isWorkday: false, startTime: '09:00', endTime: '13:00', requiredHours: 0 }
+      { day: 'Monday', isWorkday: true, startTime: '18:00', endTime: '02:00', requiredHours: 8 },
+      { day: 'Tuesday', isWorkday: true, startTime: '18:00', endTime: '02:00', requiredHours: 8 },
+      { day: 'Wednesday', isWorkday: true, startTime: '18:00', endTime: '02:00', requiredHours: 8 },
+      { day: 'Thursday', isWorkday: true, startTime: '18:00', endTime: '02:00', requiredHours: 8 },
+      { day: 'Friday', isWorkday: true, startTime: '18:00', endTime: '02:00', requiredHours: 8 },
+      { day: 'Saturday', isWorkday: false, startTime: '18:00', endTime: '22:00', requiredHours: 0 },
+      { day: 'Sunday', isWorkday: false, startTime: '18:00', endTime: '22:00', requiredHours: 0 }
     ],
     lateGraceMinutes: 15,
     overtimeThresholdHours: 8,
@@ -50,7 +63,23 @@ export const SettingsPage: React.FC = () => {
 
   const handleDayChange = (index: number, updates: Partial<DaySchedule>) => {
     const updated = [...scheduleConfig.schedules];
-    updated[index] = { ...updated[index], ...updates };
+    const current = updated[index];
+    const newStart = updates.startTime !== undefined ? updates.startTime : current.startTime;
+    const newEnd = updates.endTime !== undefined ? updates.endTime : current.endTime;
+    const isWorkday = updates.isWorkday !== undefined ? updates.isWorkday : current.isWorkday;
+
+    let computedHours = current.requiredHours;
+    if (updates.requiredHours !== undefined) {
+      computedHours = updates.requiredHours;
+    } else if (updates.startTime !== undefined || updates.endTime !== undefined || updates.isWorkday !== undefined) {
+      computedHours = isWorkday ? calculateHoursBetween(newStart, newEnd) : 0;
+    }
+
+    updated[index] = {
+      ...current,
+      ...updates,
+      requiredHours: computedHours
+    };
     setScheduleConfig({ ...scheduleConfig, schedules: updated });
   };
 
@@ -402,7 +431,7 @@ export const SettingsPage: React.FC = () => {
           <label className="flex items-center justify-between p-3.5 rounded-2xl bg-slate-50 border border-slate-200 cursor-pointer hover:bg-slate-100 transition-colors">
             <div>
               <div className="font-bold text-xs text-slate-900">Daily Clock-In Notification</div>
-              <div className="text-[11px] text-slate-500">Receive reminder at 09:00 AM if not clocked in.</div>
+              <div className="text-[11px] text-slate-500">Receive reminder at 06:00 PM if not clocked in.</div>
             </div>
             <input
               type="checkbox"
@@ -415,7 +444,7 @@ export const SettingsPage: React.FC = () => {
           <label className="flex items-center justify-between p-3.5 rounded-2xl bg-slate-50 border border-slate-200 cursor-pointer hover:bg-slate-100 transition-colors">
             <div>
               <div className="font-bold text-xs text-slate-900">End of Day Clock-Out Reminder</div>
-              <div className="text-[11px] text-slate-500">Receive notification at 06:00 PM to finalize session.</div>
+              <div className="text-[11px] text-slate-500">Receive notification at 02:00 AM to finalize session.</div>
             </div>
             <input
               type="checkbox"

@@ -1335,7 +1335,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate }) => {
             <div className="flex items-center gap-2 text-xs font-semibold text-slate-500">
               <span>{currentDateFormatted}</span>
               <span>•</span>
-              <span className="text-slate-400">Shift: 09:00 AM – 05:00 PM (8h)</span>
+              <span className="text-slate-400">Shift: 06:00 PM – 02:00 AM (8h)</span>
             </div>
 
             <div className="text-4xl sm:text-5xl font-extrabold text-slate-900 font-mono tracking-tight tabular-nums">
