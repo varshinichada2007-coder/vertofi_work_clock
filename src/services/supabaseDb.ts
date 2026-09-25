@@ -229,8 +229,12 @@ export class SupabaseDbService {
         totalBreakSeconds: r.total_break_seconds || 0,
         netWorkSeconds: r.net_work_seconds || 0,
         overtimeSeconds: Math.max(0, (r.net_work_seconds || 0) - 28800),
-        status: (r.status?.toUpperCase() === 'ON_BREAK' ? 'ON_BREAK' : ((r.status?.toUpperCase() === 'LATE' || r.is_late) ? 'LATE' : 'PRESENT')),
-        completionStatus: r.completion_status || (r.status?.toUpperCase() === 'ON_BREAK' ? 'On Break' : 'Working'),
+        status: (r.status?.toUpperCase() === 'ON_BREAK' 
+          ? 'ON_BREAK' 
+          : (r.status?.toUpperCase() === 'WORKING' 
+            ? 'WORKING' 
+            : ((r.status?.toUpperCase() === 'LATE' || r.is_late) ? 'LATE' : (r.status?.toUpperCase() === 'LEAVE' ? 'LEAVE' : 'PRESENT')))),
+        completionStatus: r.completion_status || (r.status?.toUpperCase() === 'ON_BREAK' ? 'On Break' : (r.status?.toUpperCase() === 'WORKING' ? 'Working' : 'Shift Recorded')),
         isLate: r.is_late || false,
         lateMinutes: r.late_minutes || 0,
         initialTask: r.initial_task,
@@ -276,6 +280,16 @@ export class SupabaseDbService {
       return true;
     } catch (e) {
       console.error('Error in upsertAttendanceRecord:', e);
+      return false;
+    }
+  }
+
+  async deleteAttendanceRecord(id: string): Promise<boolean> {
+    if (!this.isConfigured()) return false;
+    try {
+      const { error } = await supabase.from('attendance_records').delete().eq('id', id);
+      return !error;
+    } catch (e) {
       return false;
     }
   }

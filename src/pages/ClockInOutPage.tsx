@@ -1,8 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Clock, Play, Square, Coffee, CheckCircle2,
   Timer, Calendar, Activity, Sparkles, MapPin, Building2,
-  TrendingUp, ShieldCheck
+  TrendingUp, ShieldCheck, RefreshCw
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useWorkClock } from '../context/WorkClockContext';
@@ -22,7 +22,19 @@ export const ClockInOutPage: React.FC = () => {
     endBreak,
     resumeClockIn,
     setIsClockOutModalOpen,
+    syncNow
   } = useWorkClock();
+
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  const handleSync = async () => {
+    setIsSyncing(true);
+    try {
+      await syncNow();
+    } finally {
+      setTimeout(() => setIsSyncing(false), 500);
+    }
+  };
 
   const isNotClockedIn = clockState.status === 'NOT_CLOCKED_IN';
   const isWorking = clockState.status === 'WORKING';
@@ -43,9 +55,20 @@ export const ClockInOutPage: React.FC = () => {
   return (
     <div className="space-y-6 max-w-4xl mx-auto animate-in fade-in duration-150">
       {/* Page Title & Breadcrumb */}
-      <div>
-        <h2 className="text-xl font-bold text-slate-900 tracking-tight">Punch Clock Hub</h2>
-        <p className="text-xs text-slate-500">Standard Shift: 6:00 PM – 1:00 AM (7h Workday) • Overnight Window Active</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-bold text-slate-900 tracking-tight">Punch Clock Hub</h2>
+          <p className="text-xs text-slate-500">Standard Shift: 6:00 PM – 1:00 AM (7h Workday) • Overnight Window Active</p>
+        </div>
+        <button
+          onClick={handleSync}
+          disabled={isSyncing}
+          title="Force refresh live shift data from cloud"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:border-slate-300 shadow-2xs transition-all active:scale-95"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 text-brand-600 ${isSyncing ? 'animate-spin' : ''}`} />
+          <span>{isSyncing ? 'Syncing...' : 'Sync Cloud'}</span>
+        </button>
       </div>
 
       {/* Main Digital Clock Punch Center */}

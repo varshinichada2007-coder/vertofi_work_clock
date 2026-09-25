@@ -8,7 +8,7 @@ import { api, MAX_DAILY_BREAK_SECONDS } from '../../services/api';
 import { formatSecondsToHM } from '../../services/exportUtils';
 import { useAuth } from '../../context/AuthContext';
 import { useWorkClock } from '../../context/WorkClockContext';
-import { storage } from '../../services/storage';
+import { storage, getEffectiveShiftDate } from '../../services/storage';
 
 export interface EmployeeDetailModalProps {
   member?: TeamMemberStatus | { user: User; [key: string]: any } | null;
@@ -35,7 +35,7 @@ export const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({
   // Admin Shift Re-Open State
   const [isReopenFormOpen, setIsReopenFormOpen] = useState(false);
   const [reopenReason, setReopenReason] = useState('Auto clock-out error / Valid reason verified by Admin');
-  const [reopenMode, setReopenMode] = useState<'RESUME' | 'RESET_TO_CLOCK_IN'>('RESUME');
+  const [reopenMode, setReopenMode] = useState<'RESUME' | 'RESET_TO_CLOCK_IN'>('RESET_TO_CLOCK_IN');
   const [isSubmittingReopen, setIsSubmittingReopen] = useState(false);
 
   useEffect(() => {
@@ -75,8 +75,9 @@ export const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({
   if (!isOpen || !targetUser) return null;
 
   const isAdmin = loggedInUser?.role === 'ADMIN';
+  const { shiftDateStr } = getEffectiveShiftDate();
   const activeClockState = storage.getActiveClockState(targetUser.id);
-  const todayRecord = attendanceHistory.find(r => r.date === new Date().toISOString().split('T')[0]) || attendanceHistory[0];
+  const todayRecord = attendanceHistory.find(r => r.date === shiftDateStr);
 
   let liveWorkSec = 0;
   let liveTotalBreakSec = activeClockState.accumulatedBreakSeconds;
@@ -86,31 +87,39 @@ export const EmployeeDetailModal: React.FC<EmployeeDetailModalProps> = ({
     liveTotalBreakSec = activeClockState.accumulatedBreakSeconds + currentBreakSec;
   }
 
-  if (activeClockState.clockInTimestamp) {
-    const currentMs = activeClockState.clockOutTimestamp || now.getTime();
-    const totalElapsed = Math.floor((currentMs - activeClockState.clockInTimestamp) / 1000);
-    liveWorkSec = Math.max(0, totalElapsed - liveTotalBreakSec);
-  } else if (todayRecord) {
-    liveWorkSec = todayRecord.netWorkSeconds;
-    liveTotalBreakSec = todayRecord.totalBreakSeconds;
+  if (activeClockState.status === 'WORKING' || activeClockState.status === 'ON_BREAK') {
+    if (activeClockState.clockInTimestamp) {
+      const currentMs = activeClockState.clockOutTimestamp || now.getTime();
+      const totalElapsed = Math.floor((currentMs - activeClockState.clockInTimestamp) / 1000);
+      liveWorkSec = Math.max(0, totalElapsed - liveTotalBreakSec);
+    } else if (todayRecord) {
+      liveWorkSec = todayRecord.netWorkSeconds;
+      liveTotalBreakSec = todayRecord.totalBreakSeconds;
+    }
+  } else if (activeClockState.status === 'CLOCKED_OUT') {
+    liveWorkSec = todayRecord?.netWorkSeconds || 0;
+    liveTotalBreakSec = todayRecord?.totalBreakSeconds || activeClockState.accumulatedBreakSeconds || 0;
+  } else {
+    liveWorkSec = 0;
+    liveTotalBreakSec = 0;
   }
 
   const breakRemSec = Math.max(0, MAX_DAILY_BREAK_SECONDS - liveTotalBreakSec);
   const overtimeSec = Math.max(0, liveWorkSec - 28800);
 
-  const clockInDisplay = activeClockState.clockInTimestamp
+  const clockInDisplay = (activeClockState.status !== 'NOT_CLOCKED_IN' && activeClockState.clockInTimestamp)
     ? new Date(activeClockState.clockInTimestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-    : (todayRecord?.clockIn || 'Not Clocked In');
+    : (todayRecord?.clockIn && todayRecord.clockIn !== '—' ? todayRecord.clockIn : 'Not Clocked In');
 
   const statusDisplay = activeClockState.status === 'WORKING'
     ? '🟢 Working (Active Shift)'
     : activeClockState.status === 'ON_BREAK'
     ? '🟡 On Break'
     : activeClockState.status === 'CLOCKED_OUT'
-    ? '🟣 Clocked Out'
+    ? '🟣 Clocked Out (Shift Finalized)'
     : todayRecord?.status === 'LEAVE'
     ? '🟣 On Leave'
-    : 'Not Started';
+    : '⚪ Not Clocked In Yet';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">

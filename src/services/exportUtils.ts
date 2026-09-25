@@ -87,6 +87,55 @@ export const exportAttendanceToExcel = (
   XLSX.writeFile(workbook, filename);
 };
 
+// Generate crisp official Vertofi company logo image for PDF headers
+const getVertofiLogoDataUrl = (): string => {
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = 160;
+    canvas.height = 160;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return '';
+
+    // Dark rounded emblem
+    ctx.fillStyle = '#0f172a';
+    ctx.beginPath();
+    ctx.roundRect(4, 4, 152, 152, 28);
+    ctx.fill();
+
+    // Data dots & pills
+    ctx.fillStyle = '#FFFFFF';
+    ctx.beginPath(); ctx.arc(58, 38, 4.5, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(76, 38, 4.5, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(44, 56, 4.5, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.roundRect(56, 51.5, 34, 9, 4.5); ctx.fill();
+    ctx.beginPath(); ctx.arc(56, 74, 4.5, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.roundRect(68, 69.5, 34, 9, 4.5); ctx.fill();
+    ctx.beginPath(); ctx.arc(64, 92, 4.5, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.roundRect(76, 87.5, 34, 9, 4.5); ctx.fill();
+
+    // Blue Facet
+    ctx.fillStyle = '#0066FF';
+    ctx.beginPath();
+    ctx.moveTo(98, 22); ctx.lineTo(122, 46); ctx.lineTo(108, 58); ctx.lineTo(98, 48); ctx.closePath(); ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(98, 22); ctx.lineTo(98, 76); ctx.lineTo(108, 66); ctx.lineTo(108, 42); ctx.closePath(); ctx.fill();
+
+    // Golden Pillar
+    ctx.fillStyle = '#D99B16';
+    ctx.beginPath();
+    ctx.moveTo(128, 32); ctx.lineTo(152, 48); ctx.lineTo(152, 118); ctx.lineTo(138, 106); ctx.lineTo(138, 52); ctx.lineTo(128, 44); ctx.closePath(); ctx.fill();
+
+    // Red Accent
+    ctx.fillStyle = '#E52320';
+    ctx.beginPath();
+    ctx.moveTo(128, 114); ctx.lineTo(152, 132); ctx.lineTo(128, 132); ctx.closePath(); ctx.fill();
+
+    return canvas.toDataURL('image/png');
+  } catch {
+    return '';
+  }
+};
+
 export const exportAttendanceToPDF = (
   records: AttendanceRecord[],
   users?: User[],
@@ -97,20 +146,32 @@ export const exportAttendanceToPDF = (
 
   // Header background
   doc.setFillColor(15, 23, 42); // slate-900
-  doc.rect(0, 0, 297, 32, 'F');
+  doc.rect(0, 0, 297, 34, 'F');
+
+  // Vertofi Official Logo
+  const logoDataUrl = getVertofiLogoDataUrl();
+  if (logoDataUrl) {
+    try {
+      doc.addImage(logoDataUrl, 'PNG', 12, 5, 24, 24);
+    } catch {
+      // fallback
+    }
+  }
 
   // Title & Brand
-  doc.setTextColor(14, 165, 233); // brand blue
-  doc.setFontSize(18);
-  doc.text('VERTOFI WORKCLOCK', 14, 15);
+  doc.setTextColor(14, 165, 233); // brand cyan
+  doc.setFontSize(16);
+  doc.setFont('helvetica', 'bold');
+  doc.text('VERTOFI WORKCLOCK', 40, 15);
 
   doc.setTextColor(255, 255, 255);
-  doc.setFontSize(11);
-  doc.text(reportTitle, 14, 24);
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'normal');
+  doc.text(reportTitle, 40, 24);
 
   doc.setTextColor(148, 163, 184); // slate-400
   doc.setFontSize(8);
-  doc.text(`Generated on: ${new Date().toLocaleString()} | SaaS Workforce Management`, 14, 38);
+  doc.text(`Generated on: ${new Date().toLocaleString()} | Vertofi SaaS Workforce Management`, 14, 40);
 
   const tableRows = records.map(r => {
     const emp = users?.find(u => u.id === r.userId || u.employeeId === r.userId);

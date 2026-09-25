@@ -33,6 +33,7 @@ interface WorkClockContextType {
   endBreak: () => Promise<void>;
   clockOut: (notes?: string) => Promise<void>;
   updateTask: (taskName: string, status?: 'Working' | 'Completed' | 'Paused') => Promise<void>;
+  syncNow: () => Promise<void>;
   dismissToast: (id: string) => void;
   addToast: (title: string, message: string, type?: ToastMessage['type']) => void;
 
@@ -382,6 +383,29 @@ export const WorkClockProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
   };
 
+  const syncNow = async () => {
+    if (!user?.id) return;
+    try {
+      const [remoteAttendance, remoteBreaks] = await Promise.all([
+        supabaseDb.getAttendanceRecords(),
+        supabaseDb.getBreakRecords()
+      ]);
+      if (remoteAttendance) storage.setAttendanceRecords(remoteAttendance);
+      if (remoteBreaks) storage.setBreakRecords(remoteBreaks);
+
+      const { activeClockState } = await api.getTodayAttendance(user.id);
+      if (activeClockState) {
+        setClockState(activeClockState);
+        setTimelineEvents(storage.getTimelineEvents(user.id));
+      }
+      addToast('Data Synchronized', 'Latest cloud attendance and shift status updated.', 'success');
+    } catch (e) {
+      const state = storage.getActiveClockState(user.id);
+      setClockState(state);
+      addToast('Sync Refreshed', 'Shift state updated.', 'info');
+    }
+  };
+
   const updateSettings = (newSettings: ReminderSettings) => {
     setSettings(newSettings);
     storage.saveSettings(newSettings);
@@ -406,6 +430,7 @@ export const WorkClockProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         endBreak,
         clockOut,
         updateTask,
+        syncNow,
         dismissToast,
         addToast,
         isClockInModalOpen,

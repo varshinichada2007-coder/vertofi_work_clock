@@ -248,35 +248,9 @@ class StorageService {
     return user || null;
   }
 
-  // --- Active Clock State ---
+  // --- Active Clock State (Master Reconciled from Cloud Attendance Records) ---
   getActiveClockState(userId: string): ActiveClockState {
-    const key = `${STORAGE_KEYS.ACTIVE_CLOCK_PREFIX}${userId}`;
-    const data = localStorage.getItem(key);
     const { shiftDateStr } = getEffectiveShiftDate();
-
-    if (data) {
-      try {
-        const state: ActiveClockState = JSON.parse(data);
-        // If state is for a different shift date, check if active shift (< 10 hours)
-        if (state.todayDateStr !== shiftDateStr) {
-          const maxShiftMs = 10 * 3600 * 1000;
-          if (
-            state.clockInTimestamp &&
-            (Date.now() - state.clockInTimestamp < maxShiftMs) &&
-            state.status !== 'CLOCKED_OUT'
-          ) {
-            // Keep active session alive across midnight
-            return state;
-          }
-          return this.getDefaultClockState(shiftDateStr);
-        }
-        return state;
-      } catch {
-        // Fallback below
-      }
-    }
-
-    // If no local state on this laptop, reconcile from synced attendance records (cross-device sync)
     const records = this.getAttendanceRecords();
     const user = this.getUserById(userId);
     const todayRecord = records.find(r => 
@@ -284,36 +258,48 @@ class StorageService {
       r.date === shiftDateStr
     );
 
-    if (todayRecord) {
-      const hasActualClockOut = Boolean(
-        (todayRecord.clockOutTimestamp && todayRecord.clockOutTimestamp > (todayRecord.clockInTimestamp || 0)) ||
-        (todayRecord.clockOut && todayRecord.clockOut !== '—' && todayRecord.clockOut !== '' && todayRecord.clockOut.trim().length > 0)
-      );
-
-      let status: EmployeeStatus = 'NOT_CLOCKED_IN';
-      if (hasActualClockOut) {
-        status = 'CLOCKED_OUT';
-      } else if (todayRecord.status === 'ON_BREAK') {
-        status = 'ON_BREAK';
-      } else if (todayRecord.clockInTimestamp || (todayRecord.clockIn && todayRecord.clockIn !== '—')) {
-        status = 'WORKING';
-      }
-
-      return {
-        status,
-        clockInTimestamp: todayRecord.clockInTimestamp || null,
-        clockOutTimestamp: hasActualClockOut ? (todayRecord.clockOutTimestamp || null) : null,
-        accumulatedBreakSeconds: todayRecord.totalBreakSeconds || 0,
-        currentBreakStartTimestamp: status === 'ON_BREAK' ? Date.now() : null,
-        currentBreakType: status === 'ON_BREAK' ? 'Personal' : null,
-        currentActivity: todayRecord.currentActivity || todayRecord.initialTask || 'Working',
-        initialTask: todayRecord.initialTask || 'Work Shift',
-        attendanceId: todayRecord.id,
-        todayDateStr: shiftDateStr
-      };
+    if (!todayRecord) {
+      const defaultState = this.getDefaultClockState(shiftDateStr);
+      const key = `${STORAGE_KEYS.ACTIVE_CLOCK_PREFIX}${userId}`;
+      try {
+        localStorage.removeItem(key);
+      } catch {}
+      return defaultState;
     }
 
-    return this.getDefaultClockState(shiftDateStr);
+    const hasActualClockOut = Boolean(
+      (todayRecord.clockOutTimestamp && todayRecord.clockOutTimestamp > (todayRecord.clockInTimestamp || 0)) ||
+      (todayRecord.clockOut && todayRecord.clockOut !== '—' && todayRecord.clockOut !== '' && todayRecord.clockOut.trim().length > 0)
+    );
+
+    let status: EmployeeStatus = 'NOT_CLOCKED_IN';
+    if (hasActualClockOut) {
+      status = 'CLOCKED_OUT';
+    } else if (todayRecord.status === 'ON_BREAK') {
+      status = 'ON_BREAK';
+    } else if (todayRecord.clockInTimestamp || (todayRecord.clockIn && todayRecord.clockIn !== '—')) {
+      status = 'WORKING';
+    }
+
+    const state: ActiveClockState = {
+      status,
+      clockInTimestamp: todayRecord.clockInTimestamp || null,
+      clockOutTimestamp: hasActualClockOut ? (todayRecord.clockOutTimestamp || null) : null,
+      accumulatedBreakSeconds: todayRecord.totalBreakSeconds || 0,
+      currentBreakStartTimestamp: status === 'ON_BREAK' ? Date.now() : null,
+      currentBreakType: status === 'ON_BREAK' ? 'Personal' : null,
+      currentActivity: todayRecord.currentActivity || todayRecord.initialTask || 'Working',
+      initialTask: todayRecord.initialTask || 'Work Shift',
+      attendanceId: todayRecord.id,
+      todayDateStr: shiftDateStr
+    };
+
+    const key = `${STORAGE_KEYS.ACTIVE_CLOCK_PREFIX}${userId}`;
+    try {
+      localStorage.setItem(key, JSON.stringify(state));
+    } catch {}
+
+    return state;
   }
 
   setActiveClockState(userId: string, state: ActiveClockState): void {

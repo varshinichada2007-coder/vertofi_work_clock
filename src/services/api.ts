@@ -455,32 +455,21 @@ export const api = {
     const orgId = user?.organizationId || storage.getCurrentOrgId();
     const { shiftDateStr } = getEffectiveShiftDate();
 
-    // Instant local cache
-    let records = storage.getAttendanceRecords(orgId);
+    // Always fetch live records from Supabase
+    try {
+      const remote = await supabaseDb.getAttendanceRecords(orgId);
+      if (remote !== null && remote.length > 0) {
+        storage.setAttendanceRecords(remote);
+      }
+    } catch (e) {
+      console.warn('Supabase sync in getTodayAttendance:', e);
+    }
+
+    const records = storage.getAttendanceRecords(orgId);
     let todayRecord = records.find(r => 
       (r.userId === userId || r.userId === user?.employeeId) && 
       r.date === shiftDateStr
     );
-
-    if (!todayRecord) {
-      try {
-        const remote = await supabaseDb.getAttendanceRecords(orgId);
-        if (remote !== null) {
-          storage.setAttendanceRecords(remote);
-          records = remote;
-          todayRecord = remote.find(r => 
-            (r.userId === userId || r.userId === user?.employeeId) && 
-            r.date === shiftDateStr
-          );
-        }
-      } catch (e) {
-        console.warn('Supabase sync in getTodayAttendance:', e);
-      }
-    } else {
-      supabaseDb.getAttendanceRecords(orgId).then(remote => {
-        if (remote) storage.setAttendanceRecords(remote);
-      }).catch(() => {});
-    }
 
     let activeClockState = storage.getActiveClockState(userId);
 
@@ -541,6 +530,22 @@ export const api = {
         currentActivity: todayRecord.currentActivity || todayRecord.initialTask || 'Working',
         initialTask: todayRecord.initialTask || 'Work Shift',
         attendanceId: todayRecord.id,
+        todayDateStr: shiftDateStr
+      };
+      storage.setActiveClockState(userId, activeClockState);
+    }
+
+    if (!todayRecord) {
+      activeClockState = {
+        status: 'NOT_CLOCKED_IN',
+        clockInTimestamp: null,
+        clockOutTimestamp: null,
+        accumulatedBreakSeconds: 0,
+        currentBreakStartTimestamp: null,
+        currentBreakType: null,
+        currentActivity: 'No active task',
+        initialTask: 'No active task',
+        attendanceId: null,
         todayDateStr: shiftDateStr
       };
       storage.setActiveClockState(userId, activeClockState);
@@ -621,8 +626,10 @@ export const api = {
 
     storage.saveAttendanceRecord(attendanceRecord);
     try {
-      supabaseDb.upsertProfile(user).catch(() => {});
-      supabaseDb.upsertAttendanceRecord(attendanceRecord).catch(() => {});
+      await Promise.allSettled([
+        supabaseDb.upsertProfile(user),
+        supabaseDb.upsertAttendanceRecord(attendanceRecord)
+      ]);
     } catch (e) {
       console.warn('Supabase clockIn sync warning:', e);
     }
@@ -753,14 +760,19 @@ export const api = {
       notes: notes || undefined
     };
     storage.saveBreakRecord(breakRec);
-    supabaseDb.upsertBreakRecord(breakRec).catch(() => {});
-
     if (todayRecord) {
       todayRecord.status = 'ON_BREAK';
       todayRecord.completionStatus = 'On Break';
       todayRecord.updatedAt = now.toISOString();
       storage.saveAttendanceRecord(todayRecord);
-      supabaseDb.upsertAttendanceRecord(todayRecord).catch(() => {});
+    }
+    try {
+      await Promise.allSettled([
+        supabaseDb.upsertBreakRecord(breakRec),
+        todayRecord ? supabaseDb.upsertAttendanceRecord(todayRecord) : Promise.resolve()
+      ]);
+    } catch (e) {
+      console.warn('Supabase startBreak sync warning:', e);
     }
 
     storage.addTimelineEvent(userId, {
@@ -810,7 +822,6 @@ export const api = {
       activeBreak.endTime = now.toISOString();
       activeBreak.durationSeconds = breakDurationSec;
       storage.saveBreakRecord(activeBreak);
-      supabaseDb.upsertBreakRecord(activeBreak).catch(() => {});
     }
 
     const records = storage.getAttendanceRecords(orgId);
@@ -824,7 +835,15 @@ export const api = {
       todayRecord.completionStatus = 'Working';
       todayRecord.updatedAt = now.toISOString();
       storage.saveAttendanceRecord(todayRecord);
-      supabaseDb.upsertAttendanceRecord(todayRecord).catch(() => {});
+    }
+
+    try {
+      await Promise.allSettled([
+        activeBreak ? supabaseDb.upsertBreakRecord(activeBreak) : Promise.resolve(),
+        todayRecord ? supabaseDb.upsertAttendanceRecord(todayRecord) : Promise.resolve()
+      ]);
+    } catch (e) {
+      console.warn('Supabase endBreak sync warning:', e);
     }
 
     const remainingBreakSec = Math.max(0, MAX_DAILY_BREAK_SECONDS - newAccumulatedBreak);
@@ -908,7 +927,7 @@ export const api = {
       todayRecord.updatedAt = now.toISOString();
       storage.saveAttendanceRecord(todayRecord);
       try {
-        supabaseDb.upsertAttendanceRecord(todayRecord).catch(() => {});
+        await supabaseDb.upsertAttendanceRecord(todayRecord);
       } catch (e) {
         console.warn('Supabase clockOut warning:', e);
       }
@@ -1050,6 +1069,7 @@ export const api = {
       if (todayRecord) {
         const filtered = records.filter(r => r.id !== todayRecord.id);
         storage.setAttendanceRecords(filtered);
+        supabaseDb.deleteAttendanceRecord(todayRecord.id).catch(() => {});
       }
     }
 
@@ -1154,18 +1174,30 @@ export const api = {
   async getAttendanceHistory(userId: string, orgId?: string): Promise<AttendanceRecord[]> {
     const user = storage.getUserById(userId);
     const targetOrg = orgId || user?.organizationId || storage.getCurrentOrgId();
-    supabaseDb.getAttendanceRecords(targetOrg).then(remote => {
-      if (remote) storage.setAttendanceRecords(remote);
-    }).catch(() => {});
+    try {
+      const remote = await supabaseDb.getAttendanceRecords(targetOrg);
+      if (remote && remote.length > 0) {
+        storage.setAttendanceRecords(remote);
+        return remote.filter(r => r.userId === userId || r.userId === user?.employeeId).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      }
+    } catch (e) {
+      console.warn('Supabase fetch in getAttendanceHistory:', e);
+    }
     const all = storage.getAttendanceRecords(targetOrg);
-    return all.filter(r => r.userId === userId).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    return all.filter(r => r.userId === userId || r.userId === user?.employeeId).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   },
 
   async getAllAttendanceRecords(orgId?: string): Promise<AttendanceRecord[]> {
     const targetOrg = orgId || storage.getCurrentOrgId();
-    supabaseDb.getAttendanceRecords(targetOrg).then(remote => {
-      if (remote) storage.setAttendanceRecords(remote);
-    }).catch(() => {});
+    try {
+      const remote = await supabaseDb.getAttendanceRecords(targetOrg);
+      if (remote && remote.length > 0) {
+        storage.setAttendanceRecords(remote);
+        return remote.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      }
+    } catch (e) {
+      console.warn('Supabase fetch in getAllAttendanceRecords:', e);
+    }
     return storage.getAttendanceRecords(targetOrg).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   },
 
@@ -1178,9 +1210,13 @@ export const api = {
   async getBreakHistory(userId: string): Promise<BreakRecord[]> {
     const user = storage.getUserById(userId);
     const targetOrg = user?.organizationId || storage.getCurrentOrgId();
-    supabaseDb.getBreakRecords().then(remote => {
-      if (remote && remote.length > 0) storage.setBreakRecords(remote);
-    }).catch(() => {});
+    try {
+      const remote = await supabaseDb.getBreakRecords();
+      if (remote && remote.length > 0) {
+        storage.setBreakRecords(remote);
+        return remote.filter(b => b.userId === userId);
+      }
+    } catch (e) {}
     return storage.getBreakRecords(targetOrg).filter(b => b.userId === userId);
   },
 
@@ -1193,19 +1229,21 @@ export const api = {
   // --- Live Team Status (Admin Dashboard & Attendance Table) ---
   async getTeamAttendance(orgId?: string): Promise<TeamMemberStatus[]> {
     const targetOrg = orgId || storage.getCurrentOrgId();
+    try {
+      const [remoteProfiles, remoteAttendance] = await Promise.all([
+        supabaseDb.getProfiles(targetOrg),
+        supabaseDb.getAttendanceRecords(targetOrg)
+      ]);
+      if (remoteProfiles && remoteProfiles.length > 0) storage.setUsers(remoteProfiles);
+      if (remoteAttendance && remoteAttendance.length > 0) storage.setAttendanceRecords(remoteAttendance);
+    } catch (e) {
+      console.warn('Supabase sync in getTeamAttendance:', e);
+    }
+
     const employees = storage.getUsers(targetOrg).filter(u => u.role !== 'ADMIN');
     const { shiftDateStr } = getEffectiveShiftDate();
     const nowMs = Date.now();
     const attendanceRecords = storage.getAttendanceRecords(targetOrg);
-
-    // Trigger background sync
-    Promise.allSettled([
-      supabaseDb.getProfiles(targetOrg),
-      supabaseDb.getAttendanceRecords(targetOrg)
-    ]).then(([usersRes, attRes]) => {
-      if (usersRes.status === 'fulfilled' && usersRes.value) storage.setUsers(usersRes.value);
-      if (attRes.status === 'fulfilled' && attRes.value) storage.setAttendanceRecords(attRes.value);
-    }).catch(() => {});
 
     return employees.map(user => {
       // Find strictly today's shift record
