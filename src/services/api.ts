@@ -301,9 +301,16 @@ export const api = {
     try {
       const remote = await supabaseDb.getProfiles(targetOrg);
       if (remote && remote.length > 0) {
-        const otherUsers = storage.getAllUsers().filter(u => u.organizationId !== targetOrg);
-        storage.setUsers([...otherUsers, ...remote]);
-        return remote;
+        // Merge: keep any locally-stored users for this org that aren't in Supabase yet
+        // (e.g. newly added employees whose upsert hasn't propagated yet)
+        const localUsers = storage.getUsers(targetOrg);
+        const remoteIds = new Set(remote.map(u => u.id));
+        const localOnlyUsers = localUsers.filter(u => !remoteIds.has(u.id));
+        const merged = [...remote, ...localOnlyUsers];
+
+        const otherOrgUsers = storage.getAllUsers().filter(u => u.organizationId !== targetOrg);
+        storage.setUsers([...otherOrgUsers, ...merged]);
+        return merged;
       }
     } catch (e) {
       console.warn('Supabase getEmployees fallback:', e);
