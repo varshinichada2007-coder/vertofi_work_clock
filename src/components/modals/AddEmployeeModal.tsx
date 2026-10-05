@@ -21,7 +21,7 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [employeeId, setEmployeeId] = useState('');
-  const [phone, setPhone] = useState('+1 (555) 000-0000');
+  const [phone, setPhone] = useState('+91 98765 43210');
   const [department, setDepartment] = useState('Engineering');
   const [designation, setDesignation] = useState('Software Engineer');
   const [employeeType, setEmployeeType] = useState<EmployeeType>('Employee');
@@ -30,10 +30,28 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
   const [confirmPassword, setConfirmPassword] = useState('password123');
   const [profileImage, setProfileImage] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (!isModalOpen) return null;
 
+  const resetForm = () => {
+    setName('');
+    setEmail('');
+    setEmployeeId('');
+    setPhone('+91 98765 43210');
+    setDepartment('Engineering');
+    setDesignation('Software Engineer');
+    setEmployeeType('Employee');
+    setJoiningDate(new Date().toISOString().split('T')[0]);
+    setPassword('password123');
+    setConfirmPassword('password123');
+    setProfileImage('');
+    setErrorMsg(null);
+    setIsSubmitting(false);
+  };
+
   const closeModal = () => {
+    resetForm();
     if (propOnClose) {
       propOnClose();
     } else {
@@ -43,13 +61,25 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return; // Guard against double-submission
     setErrorMsg(null);
+
+    if (!name.trim() || !email.trim()) {
+      setErrorMsg('Name and email are required.');
+      return;
+    }
 
     if (password !== confirmPassword) {
       setErrorMsg('Passwords do not match.');
       return;
     }
 
+    if (password.length < 6) {
+      setErrorMsg('Password must be at least 6 characters.');
+      return;
+    }
+
+    setIsSubmitting(true);
     try {
       await addEmployee({
         organizationId: organization?.id,
@@ -65,18 +95,14 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
         profileImage: profileImage.trim() || undefined
       });
 
-      addToast('Employee Added', `${name} account created successfully.`, 'success');
+      addToast('Employee Added', `${name.trim()} account created successfully.`, 'success');
       closeModal();
-
-      // Reset form
-      setName('');
-      setEmail('');
-      setEmployeeId('');
-      setPhone('+1 (555) 000-0000');
     } catch (err: any) {
       setErrorMsg(err.message || 'Unable to add employee.');
+      setIsSubmitting(false);
     }
   };
+
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
@@ -267,18 +293,33 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
             <button
               type="button"
               onClick={closeModal}
-              className="px-5 py-2.5 rounded-xl text-slate-600 hover:bg-slate-100 text-xs font-semibold transition-colors"
+              disabled={isSubmitting}
+              className="px-5 py-2.5 rounded-xl text-slate-600 hover:bg-slate-100 text-xs font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="px-6 py-3 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow-md shadow-brand-600/20 flex items-center gap-2 transition-all"
+              disabled={isSubmitting}
+              className="px-6 py-3 rounded-xl bg-brand-600 hover:bg-brand-700 disabled:opacity-60 disabled:cursor-not-allowed text-white text-xs font-bold shadow-md shadow-brand-600/20 flex items-center gap-2 transition-all"
             >
-              <UserPlus className="w-4 h-4" />
-              <span>Create Employee Account</span>
+              {isSubmitting ? (
+                <>
+                  <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
+                  </svg>
+                  <span>Adding...</span>
+                </>
+              ) : (
+                <>
+                  <UserPlus className="w-4 h-4" />
+                  <span>Create Employee Account</span>
+                </>
+              )}
             </button>
           </div>
+
         </form>
       </div>
     </div>

@@ -61,13 +61,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setOrganization(currentOrg);
         setOrganizations(storage.getOrganizations());
 
-        // Sync fresh data from Supabase database
+        // Sync fresh data from Supabase database (merge, never overwrite)
         try {
           await supabaseDb.checkAndSeedDefaults();
-          const remoteUsers = await supabaseDb.getProfiles();
-          if (remoteUsers && remoteUsers.length > 0 && isMounted) {
-            storage.setUsers(remoteUsers);
-            setUsers(remoteUsers.filter((u: User) => u.organizationId === currentOrg.id));
+          const orgUsers = await api.getEmployees(currentOrg.id);
+          if (orgUsers && orgUsers.length > 0 && isMounted) {
+            setUsers(orgUsers);
           }
         } catch (dbErr) {
           console.warn('Initial Supabase sync notice:', dbErr);

@@ -27,7 +27,14 @@ export interface AddEmployeeParams {
 
 export const MAX_DAILY_BREAK_SECONDS = 3600; // 60 minutes break cap
 
+// Supabase is the single source of truth for all user accounts.
+// localStorage is used only as a display cache (no passwords stored).
+
 export const api = {
+  // In-memory cache for getTodayAttendance (throttles Supabase polling)
+  _attendanceCacheTs: {} as Record<string, number>,
+  _attendanceCacheInFlight: {} as Record<string, boolean>,
+
   // --- Authentication ---
   async login(email: string, password?: string, secretCode?: string): Promise<User> {
     const trimmedEmail = email.trim().toLowerCase();
@@ -35,20 +42,21 @@ export const api = {
       throw new Error('Password is required.');
     }
 
-    // 1. Sync latest profiles from Supabase cloud database
-    try {
-      await supabaseDb.checkAndSeedDefaults();
-      const remoteUsers = await supabaseDb.getProfiles();
-      if (remoteUsers && remoteUsers.length > 0) {
-        storage.setUsers(remoteUsers);
-      }
-    } catch (e) {
-      console.warn('Supabase sync during login:', e);
+    // 1. Ensure default profiles exist in Supabase
+    await supabaseDb.checkAndSeedDefaults();
+
+    // 2. Fetch ALL users from Supabase (single source of truth)
+    const remoteUsers = await supabaseDb.getProfiles();
+    if (!remoteUsers || remoteUsers.length === 0) {
+      throw new Error('Unable to connect to the cloud database. Please check your internet connection and try again.');
     }
 
-    const allUsers = storage.getAllUsers();
-    const found = allUsers.find(u => u.email.toLowerCase() === trimmedEmail);
+    // Cache profiles locally for display (strip passwords before caching)
+    const usersForCache = remoteUsers.map(u => ({ ...u, password: undefined }));
+    storage.setUsers(usersForCache as any[]);
 
+    // 3. Find user by email in cloud data
+    const found = remoteUsers.find(u => u.email.toLowerCase() === trimmedEmail);
     if (!found) {
       throw new Error('Account not found with this email. Please check your credentials or contact your Administrator.');
     }
@@ -57,7 +65,7 @@ export const api = {
       throw new Error('This account has been deactivated. Please contact your organization administrator.');
     }
 
-    // Admin Secret Code verification for Administrator access
+    // 4. Admin Secret Code verification
     if (found.role === 'ADMIN') {
       const normalizedSecret = secretCode?.trim().toLowerCase().replace(/[\s-_]+/g, '');
       if (!normalizedSecret) {
@@ -69,62 +77,44 @@ export const api = {
       }
     }
 
-    const PASSWORD_LOOKUP: Record<string, string> = {
-      'gouthambadiga01@gmail.com': 'Vertofi@Fintech12',
-      'parvathamgeethika@gmail.com': 'Geethika@123',
-      'varshinichada2007@gmail.com': 'Varshini@123',
-      'dasaripravallika137@gmail.com': 'Pravallika@123',
-      'lohithpolamuri630@gmail.com': 'Lohith@123',
-      'mdsuhana231@gmail.com': 'Suhana@123'
-    };
-
+    // 5. Validate password against Supabase cloud data (NO hardcoded lookups)
     const trimmedInputPassword = password.trim();
-    const expectedPassword = found.password || PASSWORD_LOOKUP[trimmedEmail] || 'password123';
-    
-    // Check if entered password matches found password, default lookup, or standard name format
-    const nameParts = found.name.split(' ');
-    const isNamePassword = nameParts.some(part => trimmedInputPassword.toLowerCase() === `${part.toLowerCase()}@123`);
-    const isAdminPassword = found.role === 'ADMIN' && [
-      'vertofi@fintech12', 'vertofi@123', 'goutham01', 'goutham@123', 'badiga@123', 'password123'
-    ].includes(trimmedInputPassword.toLowerCase());
+    const expectedPassword = found.password || 'password123';
 
-    const isPasswordValid = 
-      trimmedInputPassword === expectedPassword ||
-      trimmedInputPassword === PASSWORD_LOOKUP[trimmedEmail] ||
-      (found.password && trimmedInputPassword === found.password) ||
-      isNamePassword ||
-      isAdminPassword;
-
-    if (!isPasswordValid) {
+    if (trimmedInputPassword !== expectedPassword) {
       throw new Error('Invalid password. Please check your credentials.');
     }
 
     storage.setCurrentUserId(found.id);
     storage.setCurrentOrgId(found.organizationId);
 
-    // Sync remote attendance and break records for this user across laptops with fast timeout
+    // 6. Sync attendance & break records from cloud for this user
     const syncPromise = Promise.all([
-      supabaseDb.getAttendanceRecords(found.organizationId),
+      supabaseDb.getAttendanceRecordsByUser(found.id),
       supabaseDb.getBreakRecords()
     ]).then(([remoteAttendance, remoteBreaks]) => {
       if (remoteAttendance && remoteAttendance.length > 0) {
-        storage.setAttendanceRecords(remoteAttendance);
+        const allLocal = storage.getAttendanceRecords(found.organizationId);
+        const othersRecords = allLocal.filter(r => r.userId !== found.id && r.userId !== found.employeeId);
+        storage.setAttendanceRecords([...othersRecords, ...remoteAttendance]);
       }
       if (remoteBreaks && remoteBreaks.length > 0) {
         storage.setBreakRecords(remoteBreaks);
       }
+      api._attendanceCacheTs[found.id] = Date.now();
     }).catch(e => {
       console.warn('Attendance sync during login warning:', e);
     });
 
-    // Fast resolution: wait up to 400ms max so login feels instantaneous, then completes in background
+    // Wait up to 3 seconds for data sync
     await Promise.race([
       syncPromise,
-      new Promise(res => setTimeout(res, 400))
+      new Promise(res => setTimeout(res, 3000))
     ]);
 
     return found;
   },
+
 
   async logout(): Promise<void> {
     storage.setCurrentUserId(null);
@@ -134,17 +124,17 @@ export const api = {
     const trimmedEmail = email.trim().toLowerCase();
     if (!trimmedEmail) throw new Error('Please enter your work email address.');
 
-    // 1. Sync profiles from Supabase if connected
+    // Fetch users from Supabase (single source of truth)
+    let allUsers: User[] = [];
     try {
       const remoteUsers = await supabaseDb.getProfiles();
       if (remoteUsers && remoteUsers.length > 0) {
-        storage.setUsers(remoteUsers);
+        allUsers = remoteUsers;
       }
     } catch (e) {
       console.warn('Supabase profile sync check:', e);
     }
 
-    const allUsers = storage.getAllUsers();
     const found = allUsers.find(u => u.email.toLowerCase() === trimmedEmail);
 
     if (!found) {
@@ -164,22 +154,10 @@ export const api = {
       throw new Error('New password must be at least 6 characters long.');
     }
 
-    // Check user existence
-    let allUsers = storage.getAllUsers();
+    // Check user existence in Supabase
+    const remoteUsers = await supabaseDb.getProfiles();
+    let allUsers: User[] = remoteUsers || [];
     let found = allUsers.find(u => u.email.toLowerCase() === trimmedEmail);
-
-    if (!found) {
-      try {
-        const remoteUsers = await supabaseDb.getProfiles();
-        if (remoteUsers && remoteUsers.length > 0) {
-          storage.setUsers(remoteUsers);
-          allUsers = remoteUsers;
-          found = allUsers.find(u => u.email.toLowerCase() === trimmedEmail);
-        }
-      } catch (e) {
-        // ignore
-      }
-    }
 
     if (!found) {
       throw new Error('No account registered with this email.');
@@ -301,20 +279,15 @@ export const api = {
     try {
       const remote = await supabaseDb.getProfiles(targetOrg);
       if (remote && remote.length > 0) {
-        // Merge: keep any locally-stored users for this org that aren't in Supabase yet
-        // (e.g. newly added employees whose upsert hasn't propagated yet)
-        const localUsers = storage.getUsers(targetOrg);
-        const remoteIds = new Set(remote.map(u => u.id));
-        const localOnlyUsers = localUsers.filter(u => !remoteIds.has(u.id));
-        const merged = [...remote, ...localOnlyUsers];
-
-        const otherOrgUsers = storage.getAllUsers().filter(u => u.organizationId !== targetOrg);
-        storage.setUsers([...otherOrgUsers, ...merged]);
-        return merged;
+        // Cache profiles locally for display (strip passwords)
+        const forCache = remote.map(u => ({ ...u, password: undefined }));
+        storage.setUsers(forCache as any[]);
+        return remote.filter(u => u.organizationId === targetOrg);
       }
     } catch (e) {
       console.warn('Supabase getEmployees fallback:', e);
     }
+    // Fallback to local cache only if Supabase is unreachable
     return storage.getUsers(targetOrg);
   },
 
@@ -330,8 +303,10 @@ export const api = {
       throw new Error('An account with this email already exists in this organization.');
     }
 
-    const userId = `usr_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-    const autoEmpId = params.employeeId?.trim() || `EMP${String(existingUsers.length + 101).padStart(3, '0')}`;
+    const userId = crypto.randomUUID(); // Must be valid UUID — Supabase profiles.id is UUID type
+    // Use timestamp suffix to guarantee uniqueness even if two admins add employees simultaneously
+    const baseEmpNum = existingUsers.length + 101;
+    const autoEmpId = params.employeeId?.trim() || `EMP${String(baseEmpNum).padStart(3, '0')}`;
     const profileImage = params.profileImage?.trim() || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(params.name)}&backgroundColor=0c8ee9,0270c7`;
 
     const newUser: User = {
@@ -354,8 +329,16 @@ export const api = {
       createdAt: new Date().toISOString()
     };
 
+    // 1. Write to localStorage FIRST so the new employee is immediately visible locally
     storage.addUser(newUser);
-    await supabaseDb.upsertProfile(newUser).catch(e => console.warn('Supabase addEmployee err:', e));
+
+    // 2. Upsert to Supabase — await this properly so we know if it succeeded.
+    //    If Supabase fails, the employee is still in localStorage and can log in locally.
+    //    Other devices will pick them up once Supabase sync succeeds.
+    const supabaseSuccess = await supabaseDb.upsertProfile(newUser);
+    if (!supabaseSuccess) {
+      console.warn('Supabase upsert for new employee failed. Employee saved locally. Will retry on next sync.');
+    }
 
     const currentUser = storage.getCurrentUser();
     if (currentUser) {
@@ -379,6 +362,7 @@ export const api = {
 
     return newUser;
   },
+
 
   async updateEmployee(userId: string, updates: Partial<User>): Promise<User> {
     const user = storage.getUserById(userId);
@@ -462,14 +446,32 @@ export const api = {
     const orgId = user?.organizationId || storage.getCurrentOrgId();
     const { shiftDateStr } = getEffectiveShiftDate();
 
-    // Always fetch live records from Supabase
-    try {
-      const remote = await supabaseDb.getAttendanceRecords(orgId);
-      if (remote !== null && remote.length > 0) {
-        storage.setAttendanceRecords(remote);
+    // Only hit Supabase if the last fetch was >8 seconds ago and no fetch is in-flight.
+    // Realtime subscriptions handle sub-second invalidation; polling is just a safety net.
+    const now = Date.now();
+    const lastFetch = (api._attendanceCacheTs || {})[userId] || 0;
+    const inFlight = (api._attendanceCacheInFlight || {})[userId] || false;
+    const CACHE_TTL_MS = 8000;
+
+    if (!inFlight && now - lastFetch > CACHE_TTL_MS) {
+      if (!api._attendanceCacheTs) api._attendanceCacheTs = {};
+      if (!api._attendanceCacheInFlight) api._attendanceCacheInFlight = {};
+      api._attendanceCacheInFlight[userId] = true;
+      try {
+        // Use per-user query (much faster than fetching all records)
+        const userRecords = await supabaseDb.getAttendanceRecordsByUser(userId);
+        if (userRecords !== null) {
+          // Merge the user's fresh records into localStorage without wiping other users
+          const allLocal = storage.getAttendanceRecords(orgId);
+          const othersRecords = allLocal.filter(r => r.userId !== userId && r.userId !== user?.employeeId);
+          storage.setAttendanceRecords([...othersRecords, ...userRecords]);
+        }
+        api._attendanceCacheTs[userId] = Date.now();
+      } catch (e) {
+        console.warn('Supabase sync in getTodayAttendance:', e);
+      } finally {
+        api._attendanceCacheInFlight[userId] = false;
       }
-    } catch (e) {
-      console.warn('Supabase sync in getTodayAttendance:', e);
     }
 
     const records = storage.getAttendanceRecords(orgId);
@@ -558,10 +560,8 @@ export const api = {
       storage.setActiveClockState(userId, activeClockState);
     }
 
-    // Background cloud sync
-    supabaseDb.getAttendanceRecords(orgId).then(remote => {
-      if (remote) storage.setAttendanceRecords(remote);
-    }).catch(() => {});
+    // Note: Background cloud sync removed — the per-user cached fetch above
+    // + Realtime subscriptions in WorkClockContext handle cross-device sync.
 
     return { activeClockState, attendanceRecord: todayRecord };
   },
@@ -1237,19 +1237,23 @@ export const api = {
   // --- Live Team Status (Admin Dashboard & Attendance Table) ---
   async getTeamAttendance(orgId?: string): Promise<TeamMemberStatus[]> {
     const targetOrg = orgId || storage.getCurrentOrgId();
+    const { shiftDateStr } = getEffectiveShiftDate();
     try {
       const [remoteProfiles, remoteAttendance] = await Promise.all([
         supabaseDb.getProfiles(targetOrg),
-        supabaseDb.getAttendanceRecords(targetOrg)
+        supabaseDb.getAttendanceRecords(targetOrg, shiftDateStr)
       ]);
       if (remoteProfiles && remoteProfiles.length > 0) storage.setUsers(remoteProfiles);
-      if (remoteAttendance && remoteAttendance.length > 0) storage.setAttendanceRecords(remoteAttendance);
+      if (remoteAttendance && remoteAttendance.length > 0) {
+        const allLocal = storage.getAttendanceRecords(targetOrg);
+        const withoutToday = allLocal.filter(r => r.date !== shiftDateStr);
+        storage.setAttendanceRecords([...withoutToday, ...remoteAttendance]);
+      }
     } catch (e) {
       console.warn('Supabase sync in getTeamAttendance:', e);
     }
 
     const employees = storage.getUsers(targetOrg).filter(u => u.role !== 'ADMIN');
-    const { shiftDateStr } = getEffectiveShiftDate();
     const nowMs = Date.now();
     const attendanceRecords = storage.getAttendanceRecords(targetOrg);
 

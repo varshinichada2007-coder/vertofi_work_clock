@@ -7,6 +7,47 @@ import {
 
 let hasSeededSupabase = false;
 
+const unavailableTables = new Set<string>();
+
+function markTableUnavailable(table: string, error: any) {
+  if (error && (error.code === 'PGRST204' || error.code === 'PGRST205' || String(error.message || '').includes('schema cache'))) {
+    unavailableTables.add(table);
+  }
+}
+
+// Shared row-mapping helper so both single-user and full-table fetches
+// produce identical AttendanceRecord objects.
+function mapAttendanceRow(r: any): import('../types').AttendanceRecord {
+  return {
+    id: r.id,
+    organizationId: 'org_vertofi',
+    userId: r.user_id,
+    date: r.date,
+    dayName: r.day_name,
+    clockIn: r.clock_in,
+    clockInTimestamp: r.clock_in_timestamp ? Number(r.clock_in_timestamp) : undefined,
+    clockOut: r.clock_out,
+    clockOutTimestamp: r.clock_out_timestamp ? Number(r.clock_out_timestamp) : undefined,
+    totalDurationSeconds: r.total_work_seconds || 0,
+    totalBreakSeconds: r.total_break_seconds || 0,
+    netWorkSeconds: r.net_work_seconds || 0,
+    overtimeSeconds: Math.max(0, (r.net_work_seconds || 0) - 28800),
+    status: (r.status?.toUpperCase() === 'ON_BREAK'
+      ? 'ON_BREAK'
+      : (r.status?.toUpperCase() === 'WORKING'
+        ? 'WORKING'
+        : ((r.status?.toUpperCase() === 'LATE' || r.is_late) ? 'LATE' : (r.status?.toUpperCase() === 'LEAVE' ? 'LEAVE' : 'PRESENT')))) as any,
+    completionStatus: r.completion_status || (r.status?.toUpperCase() === 'ON_BREAK' ? 'On Break' : (r.status?.toUpperCase() === 'WORKING' ? 'Working' : 'Shift Recorded')),
+    isLate: r.is_late || false,
+    lateMinutes: r.late_minutes || 0,
+    initialTask: r.initial_task,
+    currentActivity: r.current_activity,
+    endNotes: r.end_notes,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at
+  };
+}
+
 export class SupabaseDbService {
   isConfigured() {
     return isSupabaseConfigured();
@@ -17,6 +58,7 @@ export class SupabaseDbService {
     if (hasSeededSupabase || !this.isConfigured()) return;
     hasSeededSupabase = true;
     try {
+      // Encode password & status into manager_name so they persist in Supabase cloud without schema errors
       const defaultProfiles = [
         {
           id: 'f45bd396-988c-4f4a-8c85-f203722a1d41',
@@ -30,7 +72,7 @@ export class SupabaseDbService {
           joining_date: '2026-09-04',
           phone: '+91 9666417876',
           work_location: 'Headquarters',
-          manager_name: 'Board of Directors'
+          manager_name: 'Board of Directors||pwd:Vertofi@Fintech12||status:ACTIVE'
         },
         {
           id: '3f72f92d-f0c5-48ce-8e02-b0bc83ec3ba7',
@@ -44,7 +86,7 @@ export class SupabaseDbService {
           joining_date: '2026-09-04',
           phone: '+91 9603556970',
           work_location: 'Work From Home',
-          manager_name: 'Goutham Badiga (Admin)'
+          manager_name: 'Goutham Badiga (Admin)||pwd:Geethika@123||status:ACTIVE'
         },
         {
           id: '22b17343-5a98-4791-a81a-bef302715d09',
@@ -58,7 +100,7 @@ export class SupabaseDbService {
           joining_date: '2026-09-05',
           phone: '+91 9652383330',
           work_location: 'Work From Home',
-          manager_name: 'Goutham Badiga (Admin)'
+          manager_name: 'Goutham Badiga (Admin)||pwd:Varshini@123||status:ACTIVE'
         },
         {
           id: 'f0db1ceb-584e-4282-ae7b-2707bab456ab',
@@ -72,7 +114,7 @@ export class SupabaseDbService {
           joining_date: '2026-09-05',
           phone: '+91 9701172908',
           work_location: 'Work From Home',
-          manager_name: 'Goutham Badiga (Admin)'
+          manager_name: 'Goutham Badiga (Admin)||pwd:Pravallika@123||status:ACTIVE'
         },
         {
           id: 'f9ee9b4b-a254-46d1-8ea6-5d191e5b7718',
@@ -86,7 +128,7 @@ export class SupabaseDbService {
           joining_date: '2026-09-05',
           phone: '+91 6303154495',
           work_location: 'Work From Home',
-          manager_name: 'Goutham Badiga (Admin)'
+          manager_name: 'Goutham Badiga (Admin)||pwd:Lohith@123||status:ACTIVE'
         },
         {
           id: '1b97461f-5f16-4976-a6fc-4ade9bc396fc',
@@ -100,7 +142,7 @@ export class SupabaseDbService {
           joining_date: '2026-09-05',
           phone: '+91 9059637295',
           work_location: 'Work From Home',
-          manager_name: 'Goutham Badiga (Admin)'
+          manager_name: 'Goutham Badiga (Admin)||pwd:Suhana@123||status:ACTIVE'
         }
       ];
 
@@ -119,24 +161,30 @@ export class SupabaseDbService {
         console.error('Supabase getProfiles error:', error?.message);
         return null;
       }
-      const PASSWORD_LOOKUP: Record<string, string> = {
-        'gouthambadiga01@gmail.com': 'Vertofi@Fintech12',
-        'parvathamgeethika@gmail.com': 'Geethika@123',
-        'varshinichada2007@gmail.com': 'Varshini@123',
-        'dasaripravallika137@gmail.com': 'Pravallika@123',
-        'lohithpolamuri630@gmail.com': 'Lohith@123',
-        'mdsuhana231@gmail.com': 'Suhana@123'
-      };
 
       return data.map(p => {
+        const rawMgr = typeof p.manager_name === 'string' ? p.manager_name : '';
+        const pwdMatch = rawMgr.match(/\|\|pwd:(.*?)(?:\|\||$)/);
+        const statusMatch = rawMgr.match(/\|\|status:(.*?)(?:\|\||$)/);
+        const cleanManager = rawMgr ? rawMgr.split('||')[0].trim() : 'Goutham Badiga (Admin)';
+
         const emailLower = (p.email || '').toLowerCase().trim();
-        const fallbackPw = PASSWORD_LOOKUP[emailLower] || (p.name ? p.name.split(' ').pop() + '@123' : 'password123');
+        const defaultPwd = emailLower === 'gouthambadiga01@gmail.com' ? 'Vertofi@Fintech12' :
+                           emailLower === 'parvathamgeethika@gmail.com' ? 'Geethika@123' :
+                           emailLower === 'varshinichada2007@gmail.com' ? 'Varshini@123' :
+                           emailLower === 'dasaripravallika137@gmail.com' ? 'Pravallika@123' :
+                           emailLower === 'lohithpolamuri630@gmail.com' ? 'Lohith@123' :
+                           emailLower === 'mdsuhana231@gmail.com' ? 'Suhana@123' : 'password123';
+
+        const password = (p.password as string) || (pwdMatch ? pwdMatch[1] : defaultPwd);
+        const status = (p.status as string) || (statusMatch ? statusMatch[1] : 'ACTIVE');
+
         return {
           id: p.id,
           organizationId: 'org_vertofi',
           name: p.name,
           email: p.email,
-          password: PASSWORD_LOOKUP[emailLower] || fallbackPw,
+          password,
           employeeId: p.employee_id,
           department: p.department,
           designation: p.designation,
@@ -146,8 +194,8 @@ export class SupabaseDbService {
           profileImage: p.profile_image || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(p.name)}`,
           workLocation: p.work_location || 'Work From Home',
           phone: p.phone || '+91 98765 43210',
-          managerName: p.manager_name || 'Goutham Badiga (Admin)',
-          status: 'ACTIVE',
+          managerName: cleanManager || 'Goutham Badiga (Admin)',
+          status: (status === 'DEACTIVATED' ? 'DEACTIVATED' : 'ACTIVE') as 'ACTIVE' | 'DEACTIVATED',
           createdAt: p.created_at,
           updatedAt: p.updated_at
         };
@@ -161,6 +209,9 @@ export class SupabaseDbService {
   async upsertProfile(user: User): Promise<boolean> {
     if (!this.isConfigured()) return false;
     try {
+      const cleanManager = (user.managerName || 'Goutham Badiga (Admin)').split('||')[0].trim();
+      const encodedManager = `${cleanManager}||pwd:${user.password || 'password123'}||status:${user.status || 'ACTIVE'}`;
+
       const { error } = await supabase.from('profiles').upsert({
         id: user.id,
         name: user.name,
@@ -169,14 +220,15 @@ export class SupabaseDbService {
         department: user.department,
         designation: user.designation,
         role: user.role,
-        employee_type: user.employeeType,
+        employee_type: user.employeeType || 'Employee',
         joining_date: user.joiningDate,
         profile_image: user.profileImage,
         work_location: user.workLocation,
         phone: user.phone,
-        manager_name: user.managerName,
+        manager_name: encodedManager,
         updated_at: new Date().toISOString()
       });
+
       if (error) {
         console.error('Error upserting profile in Supabase:', error.message);
         return false;
@@ -199,50 +251,82 @@ export class SupabaseDbService {
   }
 
   async updatePasswordByEmail(email: string, newPassword: string): Promise<boolean> {
-    return true;
+    if (!this.isConfigured()) return false;
+    try {
+      const trimmedEmail = email.toLowerCase().trim();
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('email', trimmedEmail)
+        .limit(1);
+
+      if (!profiles || profiles.length === 0) return false;
+
+      const p = profiles[0];
+      const rawMgr = typeof p.manager_name === 'string' ? p.manager_name : '';
+      const cleanManager = rawMgr ? rawMgr.split('||')[0].trim() : 'Goutham Badiga (Admin)';
+      const statusMatch = rawMgr.match(/\|\|status:(.*?)(?:\|\||$)/);
+      const status = statusMatch ? statusMatch[1] : 'ACTIVE';
+      const encodedManager = `${cleanManager}||pwd:${newPassword}||status:${status}`;
+
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          manager_name: encodedManager,
+          updated_at: new Date().toISOString()
+        })
+        .eq('email', trimmedEmail);
+
+      return !error;
+    } catch (e) {
+      console.warn('updatePasswordByEmail error:', e);
+      return false;
+    }
   }
 
   // --- Attendance Records ---
-  async getAttendanceRecords(orgId?: string): Promise<AttendanceRecord[] | null> {
+  // Fetch records for a specific user (much faster — avoids full table scans)
+  async getAttendanceRecordsByUser(userId: string): Promise<AttendanceRecord[] | null> {
     if (!this.isConfigured()) return null;
     try {
       const { data, error } = await supabase
         .from('attendance_records')
         .select('*')
-        .order('date', { ascending: false });
+        .eq('user_id', userId)
+        .order('date', { ascending: false })
+        .limit(90);
+
+      if (error || !data) {
+        console.error('Supabase getAttendanceRecordsByUser error:', error?.message);
+        return null;
+      }
+      return data.map(r => mapAttendanceRow(r));
+    } catch (e) {
+      console.error('Error in getAttendanceRecordsByUser from Supabase:', e);
+      return null;
+    }
+  }
+
+  async getAttendanceRecords(orgId?: string, dateFilter?: string): Promise<AttendanceRecord[] | null> {
+    if (!this.isConfigured()) return null;
+    try {
+      let query = supabase
+        .from('attendance_records')
+        .select('*');
+
+      if (dateFilter) {
+        query = query.eq('date', dateFilter);
+      } else {
+        query = query.order('date', { ascending: false }).limit(200);
+      }
+
+      const { data, error } = await query;
 
       if (error || !data) {
         console.error('Supabase getAttendanceRecords error:', error?.message);
         return null;
       }
-      return data.map(r => ({
-        id: r.id,
-        organizationId: 'org_vertofi',
-        userId: r.user_id,
-        date: r.date,
-        dayName: r.day_name,
-        clockIn: r.clock_in,
-        clockInTimestamp: r.clock_in_timestamp ? Number(r.clock_in_timestamp) : undefined,
-        clockOut: r.clock_out,
-        clockOutTimestamp: r.clock_out_timestamp ? Number(r.clock_out_timestamp) : undefined,
-        totalDurationSeconds: r.total_work_seconds || 0,
-        totalBreakSeconds: r.total_break_seconds || 0,
-        netWorkSeconds: r.net_work_seconds || 0,
-        overtimeSeconds: Math.max(0, (r.net_work_seconds || 0) - 28800),
-        status: (r.status?.toUpperCase() === 'ON_BREAK' 
-          ? 'ON_BREAK' 
-          : (r.status?.toUpperCase() === 'WORKING' 
-            ? 'WORKING' 
-            : ((r.status?.toUpperCase() === 'LATE' || r.is_late) ? 'LATE' : (r.status?.toUpperCase() === 'LEAVE' ? 'LEAVE' : 'PRESENT')))),
-        completionStatus: r.completion_status || (r.status?.toUpperCase() === 'ON_BREAK' ? 'On Break' : (r.status?.toUpperCase() === 'WORKING' ? 'Working' : 'Shift Recorded')),
-        isLate: r.is_late || false,
-        lateMinutes: r.late_minutes || 0,
-        initialTask: r.initial_task,
-        currentActivity: r.current_activity,
-        endNotes: r.end_notes,
-        createdAt: r.created_at,
-        updatedAt: r.updated_at
-      }));
+      return data.map(r => mapAttendanceRow(r));
     } catch (e) {
       console.error('Error in getAttendanceRecords from Supabase:', e);
       return null;
@@ -339,12 +423,18 @@ export class SupabaseDbService {
     } catch (e) {
       return false;
     }
-  }  // --- Leave Requests ---
+  }
+
+  // --- Leave Requests ---
   async getLeaveRequests(orgId?: string): Promise<LeaveRequest[] | null> {
-    if (!this.isConfigured()) return null;
+    if (!this.isConfigured() || unavailableTables.has('leave_requests')) return null;
     try {
       const { data, error } = await supabase.from('leave_requests').select('*');
-      if (error || !data) return null;
+      if (error) {
+        markTableUnavailable('leave_requests', error);
+        return null;
+      }
+      if (!data) return null;
       return data.map(l => ({
         id: l.id,
         organizationId: 'org_vertofi',
@@ -370,7 +460,7 @@ export class SupabaseDbService {
   }
 
   async upsertLeaveRequest(l: LeaveRequest): Promise<boolean> {
-    if (!this.isConfigured()) return false;
+    if (!this.isConfigured() || unavailableTables.has('leave_requests')) return false;
     try {
       const { error } = await supabase.from('leave_requests').upsert({
         id: l.id,
@@ -390,6 +480,7 @@ export class SupabaseDbService {
         reviewed_at: l.reviewedAt,
         created_at: l.createdAt
       });
+      if (error) markTableUnavailable('leave_requests', error);
       return !error;
     } catch (e) {
       return false;
@@ -398,10 +489,14 @@ export class SupabaseDbService {
 
   // --- Attendance Corrections ---
   async getCorrectionRequests(orgId?: string): Promise<AttendanceCorrectionRequest[] | null> {
-    if (!this.isConfigured()) return null;
+    if (!this.isConfigured() || unavailableTables.has('correction_requests')) return null;
     try {
       const { data, error } = await supabase.from('correction_requests').select('*');
-      if (error || !data) return null;
+      if (error) {
+        markTableUnavailable('correction_requests', error);
+        return null;
+      }
+      if (!data) return null;
       return data.map(c => ({
         id: c.id,
         organizationId: 'org_vertofi',
@@ -418,8 +513,8 @@ export class SupabaseDbService {
         reason: c.reason,
         status: c.status,
         adminRemarks: c.review_reason || c.admin_remarks,
-        reviewedBy: c.reviewed_by,
-        reviewedAt: c.reviewed_at,
+        reviewedBy: c.reviewedBy,
+        reviewedAt: c.reviewedAt,
         createdAt: c.created_at
       }));
     } catch (e) {
@@ -428,7 +523,7 @@ export class SupabaseDbService {
   }
 
   async upsertCorrectionRequest(c: AttendanceCorrectionRequest): Promise<boolean> {
-    if (!this.isConfigured()) return false;
+    if (!this.isConfigured() || unavailableTables.has('correction_requests')) return false;
     try {
       const { error } = await supabase.from('correction_requests').upsert({
         id: c.id,
@@ -449,6 +544,7 @@ export class SupabaseDbService {
         reviewed_at: c.reviewedAt,
         created_at: c.createdAt
       });
+      if (error) markTableUnavailable('correction_requests', error);
       return !error;
     } catch (e) {
       return false;
@@ -457,10 +553,14 @@ export class SupabaseDbService {
 
   // --- Audit Logs ---
   async getAuditLogs(orgId?: string): Promise<AuditLog[] | null> {
-    if (!this.isConfigured()) return null;
+    if (!this.isConfigured() || unavailableTables.has('audit_logs')) return null;
     try {
       const { data, error } = await supabase.from('audit_logs').select('*').order('created_at', { ascending: false });
-      if (error || !data) return null;
+      if (error) {
+        markTableUnavailable('audit_logs', error);
+        return null;
+      }
+      if (!data) return null;
       return data.map(a => ({
         id: a.id,
         organizationId: 'org_vertofi',
@@ -483,7 +583,7 @@ export class SupabaseDbService {
   }
 
   async insertAuditLog(a: AuditLog): Promise<boolean> {
-    if (!this.isConfigured()) return false;
+    if (!this.isConfigured() || unavailableTables.has('audit_logs')) return false;
     try {
       const { error } = await supabase.from('audit_logs').insert({
         id: a.id,
@@ -500,6 +600,7 @@ export class SupabaseDbService {
         reason: a.reason,
         created_at: a.timestamp || new Date().toISOString()
       });
+      if (error) markTableUnavailable('audit_logs', error);
       return !error;
     } catch (e) {
       return false;
@@ -508,10 +609,14 @@ export class SupabaseDbService {
 
   // --- Assigned Tasks ---
   async getAssignedTasks(orgId?: string): Promise<AssignedTask[] | null> {
-    if (!this.isConfigured()) return null;
+    if (!this.isConfigured() || unavailableTables.has('assigned_tasks')) return null;
     try {
       const { data, error } = await supabase.from('assigned_tasks').select('*');
-      if (error || !data) return null;
+      if (error) {
+        markTableUnavailable('assigned_tasks', error);
+        return null;
+      }
+      if (!data) return null;
       return data.map(t => ({
         id: t.id,
         organizationId: 'org_vertofi',
@@ -535,7 +640,7 @@ export class SupabaseDbService {
   }
 
   async upsertAssignedTask(t: AssignedTask): Promise<boolean> {
-    if (!this.isConfigured()) return false;
+    if (!this.isConfigured() || unavailableTables.has('assigned_tasks')) return false;
     try {
       const { error } = await supabase.from('assigned_tasks').upsert({
         id: t.id,

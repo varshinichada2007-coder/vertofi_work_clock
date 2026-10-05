@@ -158,16 +158,21 @@ export const WorkClockProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       }
     };
 
+    const bustCacheAndSync = () => {
+      // Force immediate Supabase fetch by resetting the cache timestamp
+      if (api._attendanceCacheTs) {
+        api._attendanceCacheTs[user.id] = 0;
+      }
+      syncUserClockState();
+    };
+
     syncUserClockState();
-    const interval = setInterval(syncUserClockState, 3000);
+    // Realtime handles instant updates; poll every 10s as a fallback only
+    const interval = setInterval(syncUserClockState, 10000);
 
     // Supabase Realtime subscriptions: cross-laptop changes sync instantly
-    const subAttendance = supabaseDb.subscribeToTableChanges('attendance_records', () => {
-      syncUserClockState();
-    });
-    const subBreaks = supabaseDb.subscribeToTableChanges('break_records', () => {
-      syncUserClockState();
-    });
+    const subAttendance = supabaseDb.subscribeToTableChanges('attendance_records', bustCacheAndSync);
+    const subBreaks = supabaseDb.subscribeToTableChanges('break_records', bustCacheAndSync);
 
     return () => {
       isMounted = false;
@@ -176,6 +181,7 @@ export const WorkClockProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       subBreaks?.unsubscribe?.();
     };
   }, [user?.id]);
+
 
   // Master Activity Tracker: Keeps session alive on user interaction
   useEffect(() => {

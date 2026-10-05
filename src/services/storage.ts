@@ -203,18 +203,28 @@ class StorageService {
 
   addUser(newUser: User): void {
     const users = this.getAllUsers();
-    const index = users.findIndex(u => u.id === newUser.id || (u.organizationId === newUser.organizationId && u.employeeId === newUser.employeeId));
+    // Do not store passwords in localStorage — passwords live in Supabase cloud only
+    const sanitizedUser: User = { ...newUser, password: undefined };
+    const index = users.findIndex(u => u.id === sanitizedUser.id || (u.organizationId === sanitizedUser.organizationId && u.employeeId === sanitizedUser.employeeId));
     if (index >= 0) {
-      users[index] = newUser;
+      users[index] = sanitizedUser;
     } else {
-      users.push(newUser);
+      users.push(sanitizedUser);
     }
     localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
   }
 
   updateUser(updatedUser: User): void {
-    const users = this.getAllUsers().map(u => u.id === updatedUser.id ? updatedUser : u);
+    // Do not store passwords in localStorage — passwords live in Supabase cloud only
+    const sanitizedUser: User = { ...updatedUser, password: undefined };
+    const users = this.getAllUsers().map(u => u.id === sanitizedUser.id ? sanitizedUser : u);
     localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
+  }
+
+  setUsers(newUsers: User[]): void {
+    // Strip passwords before saving to localStorage cache
+    const sanitizedUsers = newUsers.map(u => ({ ...u, password: undefined }));
+    localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(sanitizedUsers));
   }
 
   deleteUser(userId: string): void {
@@ -568,10 +578,6 @@ class StorageService {
   }
 
   // --- Remote Sync Replacements ---
-  setUsers(users: User[]): void {
-    localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
-  }
-
   setAttendanceRecords(records: AttendanceRecord[]): void {
     localStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify(records));
   }

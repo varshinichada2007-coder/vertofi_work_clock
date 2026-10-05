@@ -6,7 +6,6 @@ import { TeamMemberStatus, User } from '../types';
 import { api } from '../services/api';
 import { formatSecondsToHM, exportTeamToCSV } from '../services/exportUtils';
 import { EmployeeDetailModal } from '../components/modals/EmployeeDetailModal';
-import { AddEmployeeModal } from '../components/modals/AddEmployeeModal';
 
 export const TeamAttendancePage: React.FC = () => {
   const { role, users } = useAuth();
@@ -246,7 +245,6 @@ export const TeamAttendancePage: React.FC = () => {
         </div>
       )}
 
-      <AddEmployeeModal />
       <EmployeeDetailModal
         employee={selectedEmployee}
         onClose={() => setSelectedEmployee(null)}

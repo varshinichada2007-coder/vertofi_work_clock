@@ -55,14 +55,14 @@ export const DEFAULT_SETTINGS: ReminderSettings = {
   idleWarningSeconds: 60
 };
 
+// NOTE: Passwords are stored ONLY in Supabase cloud database (profiles table).
+// INITIAL_USERS is kept only for the very first localStorage seed as a display fallback.
 export const INITIAL_USERS: User[] = [
-  // Admin User
   {
     id: 'f45bd396-988c-4f4a-8c85-f203722a1d41',
     organizationId: 'org_vertofi',
     name: 'Goutham Badiga',
     email: 'gouthambadiga01@gmail.com',
-    password: 'Vertofi@Fintech12',
     employeeId: 'AD001',
     department: 'Administration',
     designation: 'System Administrator',
@@ -76,13 +76,11 @@ export const INITIAL_USERS: User[] = [
     status: 'ACTIVE',
     createdAt: '2026-09-04T12:30:42.622Z'
   },
-  // 5 Authentic Employee Accounts
   {
     id: '3f72f92d-f0c5-48ce-8e02-b0bc83ec3ba7',
     organizationId: 'org_vertofi',
     name: 'Parvatham Geethika',
     email: 'parvathamgeethika@gmail.com',
-    password: 'Geethika@123',
     employeeId: 'EMP001',
     department: 'Engineering',
     designation: 'Frontend Intern',
@@ -101,7 +99,6 @@ export const INITIAL_USERS: User[] = [
     organizationId: 'org_vertofi',
     name: 'Varshini Chada',
     email: 'varshinichada2007@gmail.com',
-    password: 'Varshini@123',
     employeeId: 'EMP002',
     department: 'Engineering',
     designation: 'Frontend Intern',
@@ -120,7 +117,6 @@ export const INITIAL_USERS: User[] = [
     organizationId: 'org_vertofi',
     name: 'Dasari Pravallika',
     email: 'dasaripravallika137@gmail.com',
-    password: 'Pravallika@123',
     employeeId: 'EMP003',
     department: 'Engineering',
     designation: 'Technical Intern',
@@ -139,7 +135,6 @@ export const INITIAL_USERS: User[] = [
     organizationId: 'org_vertofi',
     name: 'Polamuri Lohith',
     email: 'lohithpolamuri630@gmail.com',
-    password: 'Lohith@123',
     employeeId: 'EMP004',
     department: 'Engineering',
     designation: 'Technical Intern ( full stack)',
@@ -158,7 +153,6 @@ export const INITIAL_USERS: User[] = [
     organizationId: 'org_vertofi',
     name: 'Mohammad Suhana',
     email: 'mdsuhana231@gmail.com',
-    password: 'Suhana@123',
     employeeId: 'EMP005',
     department: 'Engineering',
     designation: 'AI&ML engineer ( full stack )',

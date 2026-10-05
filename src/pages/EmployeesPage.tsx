@@ -46,7 +46,8 @@ export const EmployeesPage: React.FC = () => {
 
   useEffect(() => {
     fetchEmployees();
-    const interval = setInterval(fetchEmployees, 4000);
+    // Realtime handles instant updates; poll every 30s as a safety net only
+    const interval = setInterval(fetchEmployees, 30000);
     const subProfiles = supabaseDb.subscribeToTableChanges('profiles', () => {
       fetchEmployees();
     });
