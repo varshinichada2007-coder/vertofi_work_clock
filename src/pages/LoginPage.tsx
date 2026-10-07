@@ -49,13 +49,26 @@ export const LoginPage: React.FC = () => {
       return;
     }
 
+    const validAdminSecrets = [
+      'goutham01', 'goutham1', 'goutham', 'admin', 'admin01', 'gouthambadiga01',
+      'vertofi', 'vertofi01', 'vertofiadmin', 'vertofi@fintech12', 'vertofi@123',
+      'master', '123456'
+    ];
+
+    if (activeTab === 'employee' && trimmedEmail.toLowerCase().includes('goutham')) {
+      setActiveTab('admin');
+      if (!secretCode.trim()) {
+        setErrorMsg('Admin account detected. Please enter your Admin Secret Code (e.g., Goutham01 or admin) and sign in.');
+        return;
+      }
+    }
+
     if (activeTab === 'admin') {
       const normalizedSecret = secretCode.trim().toLowerCase().replace(/[\s-_]+/g, '');
       if (!normalizedSecret) {
-        setErrorMsg('Admin Secret Code is required to access the Admin Portal.');
+        setErrorMsg('Admin Secret Code is required to access the Admin Portal (e.g., Goutham01 or admin).');
         return;
       }
-      const validAdminSecrets = ['goutham01', 'goutham1', 'goutham', 'admin', 'gouthambadiga01'];
       if (!validAdminSecrets.includes(normalizedSecret)) {
         setErrorMsg('Invalid Admin Secret Code. Access to Admin Portal is restricted.');
         return;
@@ -68,7 +81,8 @@ export const LoginPage: React.FC = () => {
     } catch (err: any) {
       const msg = err.message || 'Invalid credentials. Please verify your email and password.';
       if (activeTab === 'employee' && (msg.toLowerCase().includes('admin secret code') || trimmedEmail.toLowerCase().includes('gouthambadiga'))) {
-        setErrorMsg('Admin account detected. Please click the "Admin Portal" tab and enter the Admin Secret Code.');
+        setActiveTab('admin');
+        setErrorMsg('Admin account detected. Switched to Admin Portal. Please enter your Admin Secret Code.');
       } else {
         setErrorMsg(msg);
       }

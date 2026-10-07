@@ -1,5 +1,5 @@
 import {
-  Organization, User, AttendanceRecord, BreakRecord, WorkSession,
+  Organization, User, AttendanceRecord, BreakRecord, BreakType, WorkSession,
   ActivityRecord, EmployeeStatus, TimelineEvent, ReminderSettings,
   LeaveRequest, AttendanceCorrectionRequest, AuditLog, NotificationItem,
   WorkScheduleConfig, AssignedTask
@@ -270,9 +270,15 @@ class StorageService {
       r.date === shiftDateStr
     );
 
+    const key = `${STORAGE_KEYS.ACTIVE_CLOCK_PREFIX}${userId}`;
+    let existingState: ActiveClockState | null = null;
+    try {
+      const raw = localStorage.getItem(key);
+      if (raw) existingState = JSON.parse(raw);
+    } catch {}
+
     if (!todayRecord) {
       const defaultState = this.getDefaultClockState(shiftDateStr);
-      const key = `${STORAGE_KEYS.ACTIVE_CLOCK_PREFIX}${userId}`;
       try {
         localStorage.removeItem(key);
       } catch {}
@@ -287,26 +293,66 @@ class StorageService {
     let status: EmployeeStatus = 'NOT_CLOCKED_IN';
     if (hasActualClockOut) {
       status = 'CLOCKED_OUT';
-    } else if (todayRecord.status === 'ON_BREAK') {
+    } else if (todayRecord.status === 'ON_BREAK' || existingState?.status === 'ON_BREAK') {
       status = 'ON_BREAK';
     } else if (todayRecord.clockInTimestamp || (todayRecord.clockIn && todayRecord.clockIn !== '—')) {
       status = 'WORKING';
     }
 
+    // Resolve active ongoing break without resetting timer to Date.now()
+    const breakRecords = this.getBreakRecords();
+    const activeBreak = breakRecords.find(b => 
+      (b.userId === userId || b.userId === user?.employeeId) && 
+      !b.endTime
+    );
+
+    let resolvedBreakStart: number | null = null;
+    let resolvedBreakType: BreakType | null = null;
+
+    if (status === 'ON_BREAK') {
+      if (activeBreak?.startTime) {
+        resolvedBreakStart = new Date(activeBreak.startTime).getTime();
+        resolvedBreakType = activeBreak.breakType;
+      } else if (existingState?.status === 'ON_BREAK' && existingState.currentBreakStartTimestamp) {
+        resolvedBreakStart = existingState.currentBreakStartTimestamp;
+        resolvedBreakType = (existingState.currentBreakType || 'Personal') as BreakType;
+      } else if (todayRecord.updatedAt && todayRecord.status === 'ON_BREAK') {
+        resolvedBreakStart = new Date(todayRecord.updatedAt).getTime();
+        resolvedBreakType = 'Personal' as BreakType;
+      } else {
+        resolvedBreakStart = Date.now();
+        resolvedBreakType = 'Personal' as BreakType;
+      }
+    }
+
+    // Sum all completed break durations for today
+    const completedBreakSec = breakRecords
+      .filter(b => 
+        (b.userId === userId || b.userId === user?.employeeId) && 
+        b.endTime && 
+        (b.durationSeconds || 0) > 0
+      )
+      .reduce((sum, b) => sum + (b.durationSeconds || 0), 0);
+
+    const accumulatedBreak = Math.max(
+      todayRecord.totalBreakSeconds || 0,
+      completedBreakSec,
+      existingState?.accumulatedBreakSeconds || 0
+    );
+
     const state: ActiveClockState = {
       status,
-      clockInTimestamp: todayRecord.clockInTimestamp || null,
-      clockOutTimestamp: hasActualClockOut ? (todayRecord.clockOutTimestamp || null) : null,
-      accumulatedBreakSeconds: todayRecord.totalBreakSeconds || 0,
-      currentBreakStartTimestamp: status === 'ON_BREAK' ? Date.now() : null,
-      currentBreakType: status === 'ON_BREAK' ? 'Personal' : null,
-      currentActivity: todayRecord.currentActivity || todayRecord.initialTask || 'Working',
-      initialTask: todayRecord.initialTask || 'Work Shift',
+      clockInTimestamp: todayRecord.clockInTimestamp || existingState?.clockInTimestamp || null,
+      clockOutTimestamp: hasActualClockOut ? (todayRecord.clockOutTimestamp || existingState?.clockOutTimestamp || null) : null,
+      accumulatedBreakSeconds: accumulatedBreak,
+      currentBreakStartTimestamp: resolvedBreakStart,
+      currentBreakType: resolvedBreakType,
+      currentActivity: todayRecord.currentActivity || todayRecord.initialTask || existingState?.currentActivity || 'Working',
+      initialTask: todayRecord.initialTask || existingState?.initialTask || 'Work Shift',
       attendanceId: todayRecord.id,
       todayDateStr: shiftDateStr
     };
 
-    const key = `${STORAGE_KEYS.ACTIVE_CLOCK_PREFIX}${userId}`;
     try {
       localStorage.setItem(key, JSON.stringify(state));
     } catch {}

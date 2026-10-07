@@ -297,8 +297,15 @@ export const WorkClockProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const totalElapsedSec = Math.floor((currentMs - clockInMs) / 1000);
 
     let activeBreakSec = 0;
-    if (clockState.status === 'ON_BREAK' && clockState.currentBreakStartTimestamp) {
-      activeBreakSec = Math.floor((now.getTime() - clockState.currentBreakStartTimestamp) / 1000);
+    if (clockState.status === 'ON_BREAK') {
+      let startMs = clockState.currentBreakStartTimestamp;
+      if (!startMs && user?.id) {
+        const activeBreak = storage.getBreakRecords().find(b => (b.userId === user.id || b.userId === (user as any).employeeId) && !b.endTime);
+        if (activeBreak?.startTime) startMs = new Date(activeBreak.startTime).getTime();
+      }
+      if (startMs) {
+        activeBreakSec = Math.max(0, Math.floor((now.getTime() - startMs) / 1000));
+      }
     }
 
     const totalBreakSec = clockState.accumulatedBreakSeconds + activeBreakSec;
@@ -308,8 +315,15 @@ export const WorkClockProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   // Calculate live break duration
   const calculateBreakSeconds = (): number => {
-    if (clockState.status === 'ON_BREAK' && clockState.currentBreakStartTimestamp) {
-      return Math.floor((now.getTime() - clockState.currentBreakStartTimestamp) / 1000);
+    if (clockState.status === 'ON_BREAK') {
+      let startMs = clockState.currentBreakStartTimestamp;
+      if (!startMs && user?.id) {
+        const activeBreak = storage.getBreakRecords().find(b => (b.userId === user.id || b.userId === (user as any).employeeId) && !b.endTime);
+        if (activeBreak?.startTime) startMs = new Date(activeBreak.startTime).getTime();
+      }
+      if (startMs) {
+        return Math.max(0, Math.floor((now.getTime() - startMs) / 1000));
+      }
     }
     return 0;
   };
